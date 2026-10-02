@@ -117,6 +117,16 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
   }
   return {
     type,
+    async branches() {
+      const project = await json(''); const names = [];
+      for (let page = 1; page <= 100; page++) {
+        const rows = await json(`${type === 'gitlab' ? '/repository' : ''}/branches?per_page=100&page=${page}`);
+        if (!Array.isArray(rows)) throw new Error('分支列表格式无效');
+        names.push(...rows.map(row => row.name).filter(name => typeof name === 'string' && name.length <= 250));
+        if (rows.length < 100) return { names, defaultBranch: project.default_branch };
+      }
+      throw new Error('分支数量超过 10000，请联系管理员');
+    },
     async latest() {
       const project = await json(''); const branch = repo.branch || project.default_branch;
       if (!branch) throw new Error('仓库没有默认分支，可能是空仓库');

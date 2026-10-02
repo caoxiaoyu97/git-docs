@@ -86,6 +86,16 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   assert.equal((await fetch(base + `/asset/${repo.id}/src/Main.java`)).status, 404);
   assert.equal((await fetch(base + '/data/config.json')).status, 404);
   assert.equal((await fetch(base + '/')).status, 200);
+  const branches = await (await fetch(base + `/api/repo/${repo.id}/branches`)).json();
+  assert.deepEqual(branches.branches.map(b=>b.name), ['dev','main']);
+  assert.equal(branches.branches.find(b=>b.name==='main').synced, true);
+  const endpoint = base + `/api/repo/${repo.id}/branch-sync?branch=dev`;
+  const repeated = await Promise.all(Array.from({length:8},()=>fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})));
+  assert.ok(repeated.every(r=>r.status===202));
+  let status; for(let i=0;i<50;i++){status=await(await fetch(base+`/api/repo/${repo.id}/branch-status?branch=dev`)).json();if(status.synced)break;await new Promise(r=>setTimeout(r,30));}
+  assert.equal(status.synced,true);assert.equal(mock.state.downloads,2);
+  const branchDoc=await(await fetch(base+`/api/repo/${repo.id}/doc?branch=dev&path=README.md`)).json();assert.match(branchDoc.source,/\/dev\//);assert.match(branchDoc.html,/branch=dev/);
+  assert.equal((await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://unrelated.invalid'},body:'{}'})).status,403);
   const add = await fetch(base + '/api/admin/repos', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '第二个仓库', url: mock.base + '/team/another', token: 'mock-test-token' }) });
   assert.equal(add.status, 200); const after = await (await fetch(base + '/api/repos')).json(); assert.equal(after.repos.length, 2);
 });

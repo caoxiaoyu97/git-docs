@@ -2,8 +2,12 @@ const app = document.querySelector('#app');
 let adminPassword = ''; let generation = 0; let refreshTimer;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
 const date = s => s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '尚未同步';
-const docLink = (id, path) => `/repo/${id}?path=${encodeURIComponent(path)}`;
+const docLink = (id, path) => `/repo/${id}?path=${encodeURIComponent(path)}${new URLSearchParams(location.search).get('branch') ? '&branch=' + encodeURIComponent(new URLSearchParams(location.search).get('branch')) : ''}`;
 async function api(url, body, admin = false) {
+  if (/^\/api\/repo\/[^/]+\/(docs|doc|search)(\?|$)/.test(url)) {
+    const branch = new URLSearchParams(location.search).get('branch');
+    if (branch) { const u = new URL(url, location.origin); u.searchParams.set('branch', branch); url = u.pathname + u.search; }
+  }
   const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(admin ? { Authorization: 'Bearer ' + adminPassword } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   const result = await response.json(); if (!response.ok) { const error = new Error(result.error || '请求失败'); error.status = response.status; throw error; } return result;
 }
@@ -57,14 +61,59 @@ function treeHtml(docs, id, selected) {
   function build(node, parent = "") { return Object.entries(node.dirs).sort(([a], [b]) => a.localeCompare(b, 'zh-CN', { numeric: true })).map(([name, sub]) => { const folder = parent ? parent + "/" + name : name; return `<details data-repo="${escape(id)}" data-folder="${escape(folder)}"${openFolders(id).has(folder) ? " open" : ""}><summary>${escape(name)}</summary><div class="tree-nested">${build(sub, folder)}</div></details>`; }).join('') + node.files.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true })).map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}${d.title.replace(/\.md$/i, "") === d.path.split("/").at(-1).replace(/\.md$/i, "") ? "" : `<small>${escape(d.path.split("/").at(-1))}</small>`}</a>`).join(''); }
   return build(root);
 }
+let branchTimer;
+async function mountBranches(id, run, current) {
+  const target = document.querySelector('#branch-picker'); if (!target) return;
+  try {
+    const listing = await api(`/api/repo/${id}/branches`); if (run !== generation || !target.isConnected) return;
+    target.innerHTML = `<details class="branch-menu"><summary>分支：${escape(current || listing.defaultBranch || '默认分支')} ▾</summary><input class="branch-filter" placeholder="筛选分支" aria-label="筛选分支"><div class="branch-list">${listing.branches.map(b => `<button class="branch-option ${b.checking ? 'syncing' : b.synced ? 'synced' : b.error ? 'failed' : 'unsynced'}" data-branch="${escape(b.name)}" aria-current="${b.name === current ? 'true' : 'false'}"><span>${escape(b.name)}</span><small>${b.checking ? (b.queued ? '排队中' : '同步中') : b.synced ? '已同步 · ' + b.count + ' 篇' : b.error ? '同步失败，可重试' : '未同步'}${b.name === current ? ' · 当前' : ''}</small></button>`).join('')}</div>${listing.error ? '<p class="error">' + escape(listing.error) + '</p>' : ''}</details>`;
+    target.querySelector('.branch-filter').oninput = e => { for (const button of target.querySelectorAll('[data-branch]')) button.hidden = !button.dataset.branch.toLowerCase().includes(e.target.value.toLowerCase()); };
+    target.querySelectorAll('[data-branch]').forEach(button => button.onclick = () => {
+      if (button.dataset.branch === current && document.querySelector('.markdown')) return;
+      const u = new URL(location.href); u.searchParams.set('branch', button.dataset.branch); u.hash = '';
+      navigate(u.pathname + u.search);
+    });
+  } catch (e) { if (run === generation && target.isConnected) { target.textContent = '分支列表加载失败：' + e.message; const retry = document.createElement('button'); retry.textContent = '重试'; retry.onclick = () => mountBranches(id, run, current); target.append(retry); } }
+}
+async function waitForBranch(id, branch, run) {
+  app.innerHTML = `<section class="branch-wait"><a href="/repo/${id}">返回默认分支</a><h2>${escape(branch)}</h2><p id="branch-progress" role="status">正在同步，请等待…</p><p>同步在后台进行，重复点击不会重复下载，也可以先查看其他分支。</p><div id="branch-picker"></div><button id="retry-branch" hidden>重试同步</button></section>`;
+  const retry = document.querySelector('#retry-branch'); retry.onclick = () => render();
+  try {
+    await api(`/api/repo/${id}/branch-sync?branch=${encodeURIComponent(branch)}`, {});
+    if (run !== generation) return;
+    void mountBranches(id, run, branch);
+    const poll = async () => {
+      if (run !== generation) return;
+      try {
+        const status = await api(`/api/repo/${id}/branch-status?branch=${encodeURIComponent(branch)}`);
+        if (run !== generation) return;
+        if (status.synced) return render();
+        document.querySelector('#branch-progress').textContent = status.error || (status.queued ? '正在排队同步，请等待…' : '正在同步，请等待…');
+        if (status.error && !status.checking) { retry.hidden = false; void mountBranches(id, run, branch); return; }
+        branchTimer = setTimeout(poll, 2000);
+      } catch(e) { if (run === generation) { document.querySelector('#branch-progress').textContent = e.message; retry.hidden = false; } }
+    };
+    await poll();
+  } catch(e) { if (run === generation) { document.querySelector('#branch-progress').textContent = e.message; retry.hidden = false; void mountBranches(id, run, branch); } }
+}
 async function repository(id, run, restore) {
+  const requestedBranch = new URLSearchParams(location.search).get('branch');
+  if (requestedBranch) {
+    const status = await api(`/api/repo/${id}/branch-status?branch=${encodeURIComponent(requestedBranch)}`);
+    if (run !== generation) return;
+    if (!status.synced) return waitForBranch(id, requestedBranch, run);
+  }
   const listing = await api(`/api/repo/${id}/docs`); if (run !== generation) return;
-  const selected = new URLSearchParams(location.search).get('path') || listing.documents.find(d => /^readme\.md$/i.test(d.path))?.path || listing.documents[0]?.path;
+  if (!requestedBranch && listing.branch) { const u = new URL(location.href); u.searchParams.set('branch', listing.branch); history.replaceState(history.state, '', u); }
+  const wantedPath = new URLSearchParams(location.search).get('path');
+  const selected = (wantedPath && listing.documents.some(d => d.path === wantedPath) ? wantedPath : null) || listing.documents.find(d => /^readme\.md$/i.test(d.path))?.path || listing.documents[0]?.path;
   if (selected) {
     const parts = selected.split('/').slice(0, -1);
     for (let i = 1; i <= parts.length; i++) openFolders(id).add(parts.slice(0, i).join('/'));
   }
-  app.innerHTML = `<div class="workspace"><button class="mobile-directory secondary" aria-expanded="false" aria-controls="repo-sidebar">☰ 文档目录</button><aside id="repo-sidebar" class="sidebar" data-repo="${escape(id)}"><a class="back" href="/">‹ 全部仓库</a><h2>${escape(listing.name)}</h2><label class="search-label" for="search">搜索此仓库</label><input id="search" type="search" placeholder="标题、路径或正文…" autocomplete="off"><div id="tree" class="tree">${treeHtml(listing.documents, id, selected)}</div><div class="side-bottom">${listing.documents.length} 篇文档 · ${escape(listing.branch)}</div></aside><section class="reader"><div id="document">${selected ? '<p class="loading">正在打开文档…</p>' : '<div class="empty"><h2>这个仓库还没有 Markdown 文档</h2><p>提交 .md 文件后会在下次同步时显示。</p></div>'}</div></section></div>`;
+  app.innerHTML = `<div class="workspace"><button class="mobile-directory secondary" aria-expanded="false" aria-controls="repo-sidebar">☰ 文档目录</button><aside id="repo-sidebar" class="sidebar" data-repo="${escape(id)}"><a class="back" href="/">‹ 全部仓库</a><h2>${escape(listing.name)}</h2><label class="search-label" for="search">搜索此仓库</label><input id="search" type="search" placeholder="标题、路径或正文…" autocomplete="off"><div id="tree" class="tree">${treeHtml(listing.documents, id, selected)}</div><div class="side-bottom">${listing.documents.length} 篇文档<div id="branch-picker">正在读取分支…</div></div></aside><section class="reader"><div id="document">${selected ? '<p class="loading">正在打开文档…</p>' : '<div class="empty"><h2>这个仓库还没有 Markdown 文档</h2><p>提交 .md 文件后会在下次同步时显示。</p></div>'}</div></section></div>`;
+  void mountBranches(id, run, listing.branch);
+  if (wantedPath && wantedPath !== selected) toast('当前分支没有这篇文档，已打开分支首页');
   const side = document.querySelector('.sidebar');
   const directoryButton = document.querySelector('.mobile-directory');
   directoryButton.onclick = () => {
@@ -179,7 +228,7 @@ async function admin(run) {
     document.querySelector('#login').onsubmit = async e => { e.preventDefault(); adminPassword = document.querySelector('#password').value; try { await api('/api/admin/repos', undefined, true); render(); } catch (err) { adminPassword = ''; document.querySelector('#error').textContent = err.message; } }; return;
   }
   const { repos } = await api('/api/admin/repos', undefined, true); if (run !== generation) return;
-  app.innerHTML = `<section class="admin"><div class="heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>仓库管理</h1><p>保存后立即同步，之后按设置的间隔自动检查。</p></div><button id="logout" class="secondary">退出管理</button></div><div class="admin-grid"><div><h2>已连接仓库 <span class="muted">${repos.length}</span></h2><div class="repo-list">${repos.map(r => `<div class="managed-repo"><h3>${escape(r.name)}</h3><p>${escape(r.url)}</p><small>${escape(r.branch || '默认分支')}</small><div class="actions"><button class="secondary" data-edit="${r.id}">编辑</button><button class="secondary" data-sync="${r.id}">立即同步</button><button class="text-button" data-delete="${r.id}">移除</button></div></div>`).join('') || '<p class="muted">尚未添加仓库。</p>'}</div></div><form id="repo-form" class="form-card"><h2 id="form-title">添加仓库</h2><input type="hidden" name="id"><label>显示名称<input name="name" placeholder="留空使用仓库名" maxlength="100"></label><label>仓库 HTTP/HTTPS 地址<input name="url" type="url" placeholder="https://github.com/owner/repo.git" required></label><label>分支<input name="branch" placeholder="留空使用默认分支"></label><label>访问 Token<input name="token" type="password" autocomplete="new-password" placeholder="可选；留空匿名访问公开仓库"></label><p id="provider-hint" class="hint">支持 GitLab、GitHub、Gitee，按仓库地址自动识别。</p><p class="hint">填写 Token 优先认证；未填写则匿名读取公开仓库。编辑时留空保留原令牌。</p><div id="clear-token-row" hidden><label class="inline-check"><input type="checkbox" name="clearToken">清除已保存 Token，改为匿名访问</label></div><p id="form-error" class="error"></p><div class="actions"><button type="submit">保存并同步</button><button id="reset" type="button" class="secondary">清空</button></div></form></div></section>`;
+  app.innerHTML = `<section class="admin"><div class="heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>仓库管理</h1><p>保存后立即同步，之后按设置的间隔自动检查。</p></div><button id="logout" class="secondary">退出管理</button></div><div class="admin-grid"><div><h2>已连接仓库 <span class="muted">${repos.length}</span></h2><div class="repo-list">${repos.map(r => `<div class="managed-repo"><h3>${escape(r.name)}</h3><p>${escape(r.url)}</p><small>${escape(r.branch || '默认分支')}</small><div class="actions"><button class="secondary" data-edit="${r.id}">编辑</button><button class="secondary" data-sync="${r.id}">立即同步</button><button class="text-button" data-delete="${r.id}">移除</button></div></div>`).join('') || '<p class="muted">尚未添加仓库。</p>'}</div></div><form id="repo-form" class="form-card"><h2 id="form-title">添加仓库</h2><input type="hidden" name="id"><label>显示名称<input name="name" placeholder="留空使用仓库名" maxlength="100"></label><label>仓库 HTTP/HTTPS 地址<input name="url" type="url" placeholder="https://github.com/owner/repo.git" required></label><input type="hidden" name="branch"><p class="hint">首次自动同步仓库默认分支；其他分支可在阅读页切换。</p><label>访问 Token<input name="token" type="password" autocomplete="new-password" placeholder="可选；留空匿名访问公开仓库"></label><p id="provider-hint" class="hint">支持 GitLab、GitHub、Gitee，按仓库地址自动识别。</p><p class="hint">填写 Token 优先认证；未填写则匿名读取公开仓库。编辑时留空保留原令牌。</p><div id="clear-token-row" hidden><label class="inline-check"><input type="checkbox" name="clearToken">清除已保存 Token，改为匿名访问</label></div><p id="form-error" class="error"></p><div class="actions"><button type="submit">保存并同步</button><button id="reset" type="button" class="secondary">清空</button></div></form></div></section>`;
   document.querySelector('#logout').onclick = () => { adminPassword = ''; render(); };
   const form = document.querySelector('#repo-form');
   function reset() { form.reset(); document.querySelector('#clear-token-row').hidden = true; form.elements.id.value = ''; form.elements.token.required = false; document.querySelector('#form-title').textContent = '添加仓库'; document.querySelector('#form-error').textContent = ''; }
@@ -194,6 +243,7 @@ async function admin(run) {
   document.querySelectorAll('[data-delete]').forEach(b => b.onclick = async () => { if (!confirm('移除此文档入口？原 Git 仓库不会被修改。')) return; try { await api('/api/admin/delete', { id: b.dataset.delete }, true); render(); } catch (e) { toast(e.message); } });
 }
 async function render(restore = false) {
+  clearTimeout(branchTimer);
   disposeReading();
   restoring = true;
   clearTimeout(refreshTimer); const run = ++generation; document.title = 'Git Docs · 开发文档';

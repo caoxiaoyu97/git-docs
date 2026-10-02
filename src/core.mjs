@@ -172,8 +172,8 @@ export function renderMarkdown(text, repo, snapshot, file) {
       const parsed = new URL(value, 'https://docs.invalid/' + file.split('/').map(encodeURIComponent).join('/'));
       const resolved = decodeURIComponent(parsed.pathname.slice(1));
       if (!validRelative(resolved)) return '';
-      if (/\.md$/i.test(resolved)) return docUrl(repo.id, resolved, parsed.hash);
-      if (fileSet.has(resolved)) return `/asset/${repo.id}/${resolved.split('/').map(encodeURIComponent).join('/')}${parsed.hash}`;
+      if (/\.md$/i.test(resolved)) return docUrl(repo.id, resolved, '') + (snapshot.scopedBranch ? '&branch=' + encodeURIComponent(snapshot.scopedBranch) : '') + parsed.hash;
+      if (fileSet.has(resolved)) return `/asset/${repo.id}/${resolved.split('/').map(encodeURIComponent).join('/')}${snapshot.scopedBranch ? '?branch=' + encodeURIComponent(snapshot.scopedBranch) : ''}${parsed.hash}`;
       if (image) return '';
       return sourceUrl(repo, snapshot.branch, resolved) + parsed.hash;
     } catch { return ''; }

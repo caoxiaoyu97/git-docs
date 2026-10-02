@@ -23,6 +23,7 @@ export async function mockGitLab(host = '127.0.0.1', port = 0) {
     state.requests.push(req.url);
     if (state.deny || req.headers['private-token'] !== 'mock-test-token') { res.writeHead(401); res.end('{}'); return; }
     if (req.url.includes('/repository/archive.tar.gz')) { state.downloads++; res.setHeader('Content-Type', 'application/gzip'); res.end(await archive(state.entries)); }
+    else if (req.url.includes('/repository/branches?')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify([{name:'main'},{name:'dev'}])); }
     else if (req.url.includes('/repository/branches/')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ commit: { id: state.sha } })); }
     else { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ default_branch: 'main' })); }
   });

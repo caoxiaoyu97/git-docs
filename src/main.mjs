@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import { Writable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 import { Store, atomicJson, readJson, repoConfig, digest, verifySecret, renderMarkdown, ASSETS, validRelative } from './core.mjs';
+import { BranchStore } from './branches.mjs';
 import { sourceUrl } from './providers.mjs';
 
 const home = path.resolve(process.env.GIT_DOCS_HOME || process.cwd());
@@ -50,12 +51,12 @@ async function initialize() {
 async function serve() {
   let config = await readJson(configFile);
   if (!config) throw new Error('请先运行 bash init.sh 完成初始化');
-  const store = new Store(data);
+  const store = new BranchStore(data);
   for (const repo of config.repos) await store.load(repo);
   let stopping = false; let ticking = false; let editing = false;
   async function tick() {
     if (ticking || stopping) return; ticking = true;
-    try { for (const repo of [...config.repos]) { if (stopping) break; await store.sync(repo); } }
+    try { for (const repo of [...config.repos]) { if (stopping) break; await store.refresh(repo); } }
     finally { ticking = false; }
   }
   function reposList() {
@@ -91,24 +92,46 @@ async function serve() {
           try {
             const previous = body.id ? config.repos.find(r => r.id === body.id) : undefined;
             if (body.id && !previous) return send(404, { error: '仓库不存在' });
-            if (previous && store.running.has(previous.id)) return send(409, { error: '仓库正在同步，请完成后修改' });
+            if (previous && store.busy(previous.id)) return send(409, { error: '仓库正在同步，请完成后修改' });
             const repo = repoConfig(body, previous);
             const next = { ...config, repos: previous ? config.repos.map(r => r.id === repo.id ? repo : r) : [...config.repos, repo] };
             if (next.repos.length > 100) return send(400, { error: '最多配置 100 个仓库' });
             await atomicJson(configFile, next); config = next;
+            if (previous && previous.url !== repo.url) store.forget(repo.id);
+            store.catalogs.delete(repo.id);
             void store.sync(repo); return send(200, { ok: true });
           } finally { editing = false; }
         }
         if (route === '/api/admin/delete') {
-          if (editing || store.running.has(body.id)) return send(409, { error: '正在保存或同步，请稍后重试' }); editing = true;
+          if (editing || store.busy(body.id)) return send(409, { error: '正在保存或同步，请稍后重试' }); editing = true;
           try {
             const next = { ...config, repos: config.repos.filter(r => r.id !== body.id) };
             await atomicJson(configFile, next); config = next;
-            store.snapshots.delete(body.id); store.statuses.delete(body.id);
+            store.forget(body.id);
             return send(200, { ok: true });
           } finally { editing = false; }
         }
         return send(404, { error: '接口不存在' });
+      }
+      const branchRoute = /^\/api\/repo\/([a-f0-9-]{36})\/(branches|branch-sync|branch-status)$/.exec(route);
+      if (branchRoute) {
+        const repo = config.repos.find(r => r.id === branchRoute[1]);
+        if (!repo) return send(404, { error: '仓库不存在' });
+        if (editing) return send(409, { error: '正在保存仓库，请稍后重试' });
+        if (branchRoute[2] === 'branches' && req.method === 'GET') return send(200, await store.branches(repo));
+        const branch = u.searchParams.get('branch');
+        if (!branch || branch.length > 250 || /[\x00-\x1f]/.test(branch)) return send(400, { error: '分支名称无效' });
+        if (branchRoute[2] === 'branch-status' && req.method === 'GET') return send(200, { synced: Boolean(store.snapshot(repo, branch)), ...store.state(repo, branch) });
+        if (branchRoute[2] === 'branch-sync' && req.method === 'POST') {
+          if (req.headers.origin && req.headers.origin !== new URL('http://' + req.headers.host).origin && req.headers.origin !== new URL('https://' + req.headers.host).origin) return send(403, { error: '请求来源无效' });
+          if (req.headers['content-type'] !== 'application/json') return send(415, { error: '需要 JSON 请求' });
+          const listing = await store.branches(repo);
+          if (!config.repos.includes(repo) || editing) return send(409, { error: '仓库配置已变更，请重试' });
+          if (!listing.branches.some(b => b.name === branch)) return send(404, { error: listing.error || '分支不存在' });
+          if (!store.snapshot(repo, branch)) void store.sync(repo, branch);
+          return send(202, { synced: Boolean(store.snapshot(repo, branch)), ...store.state(repo, branch) });
+        }
+        return send(405, { error: '不支持此操作' });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { error: '不支持此操作' });
       if (route === '/api/repos') return send(200, { repos: reposList(), intervalMinutes: config.intervalMinutes });
@@ -116,7 +139,8 @@ async function serve() {
       if (apiMatch) {
         const repo = config.repos.find(r => r.id === apiMatch[1]);
         if (!repo) return send(404, { error: '仓库不存在' });
-        const snapshot = store.snapshots.get(repo.id);
+        const requestedBranch = u.searchParams.get('branch');
+        const snapshot = store.snapshot(repo, requestedBranch);
         if (!snapshot) return send(409, { error: store.statuses.get(repo.id)?.error || '首次同步尚未完成，请稍后刷新' });
         if (apiMatch[2] === 'docs') return send(200, { name: repo.name, documents: snapshot.documents.map(({ text, ...d }) => d), updatedAt: snapshot.updatedAt, branch: snapshot.branch });
         if (apiMatch[2] === 'search') {
@@ -129,12 +153,12 @@ async function serve() {
         }
         const doc = snapshot.documents.find(d => d.path === u.searchParams.get('path'));
         if (!doc) return send(404, { error: '文档不存在或已删除' });
-        return send(200, { title: doc.title, path: doc.path, html: renderMarkdown(doc.text, repo, snapshot, doc.path), source: sourceUrl(repo, snapshot.branch, doc.path) });
+        return send(200, { title: doc.title, path: doc.path, html: renderMarkdown(doc.text, repo, { ...snapshot, scopedBranch: snapshot.branch }, doc.path), source: sourceUrl(repo, snapshot.branch, doc.path) });
       }
       const asset = /^\/asset\/([a-f0-9-]{36})\/(.+)$/.exec(route);
       if (asset) {
         if (!config.repos.some(r => r.id === asset[1])) return send(404, { error: '仓库不存在' });
-        const file = decodeURIComponent(asset[2]); const snapshot = store.snapshots.get(asset[1]);
+        const file = decodeURIComponent(asset[2]); const snapshot = store.snapshot(config.repos.find(r => r.id === asset[1]), u.searchParams.get('branch'));
         if (!validRelative(file) || !snapshot?.files.includes(file) || !ASSETS.has(path.extname(file).toLowerCase())) return send(404, { error: '资源不存在' });
         const ext = path.extname(file).toLowerCase();
         const mime = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.pdf': 'application/pdf' }[ext];
