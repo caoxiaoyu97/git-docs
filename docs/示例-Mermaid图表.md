@@ -36,3 +36,7 @@ sequenceDiagram
 - 箭头 `-->` 表示依赖方向。
 - 时序图用 `sequenceDiagram`，参与方用 `participant` 声明。
 - 代码块语言写 mermaid 就会渲染成图，其他语言仍按代码高亮显示。
+
+
+## TEST
+测试git钩子
