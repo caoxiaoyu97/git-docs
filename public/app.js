@@ -66,6 +66,22 @@ document.addEventListener('toggle', event => {
   if (folder.open) opened.add(folder.dataset.folder); else opened.delete(folder.dataset.folder);
   try { localStorage.setItem('git-docs:folders:' + id, JSON.stringify([...opened])); } catch {}
 }, true);
+function orderedDocuments(docs) {
+  const root = { dirs: Object.create(null), files: [] };
+  for (const doc of docs) {
+    const parts = doc.path.split('/');
+    let node = root;
+    for (const part of parts.slice(0, -1)) node = node.dirs[part] ||= { dirs: Object.create(null), files: [] };
+    node.files.push(doc);
+  }
+  const list = [];
+  (function walk(node) {
+    const entries = Object.entries(node.dirs).sort((a, b) => a[0].localeCompare(b[0], 'zh-CN', { numeric: true }));
+    for (const entry of entries) walk(entry[1]);
+    for (const doc of node.files.slice().sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true }))) list.push(doc);
+  })(root);
+  return list;
+}
 function treeHtml(docs, id, selected) {
   const root = { dirs: Object.create(null), files: [] };
   for (const doc of docs) { const parts = doc.path.split('/'); let node = root; for (const part of parts.slice(0, -1)) node = node.dirs[part] ||= { dirs: Object.create(null), files: [] }; node.files.push(doc); }
@@ -209,9 +225,10 @@ async function repository(id, run, restore) {
   const repoHref = '/repo/' + id + (requestedBranch ? '?branch=' + encodeURIComponent(requestedBranch) : '');
   const crumbs = '<a class="crumb-repo" href="' + repoHref + '">' + escape(listing.name) + '</a>'
     + trail.map((part, index) => '<span class="crumb-sep">›</span><span class="crumb' + (index === trail.length - 1 ? ' current' : '') + '">' + escape(part) + '</span>').join('');
-  const position = listing.documents.findIndex(item => item.path === selected);
-  const previous = position > 0 ? listing.documents[position - 1] : null;
-  const following = position >= 0 && position < listing.documents.length - 1 ? listing.documents[position + 1] : null;
+  const order = orderedDocuments(listing.documents);
+  const position = order.findIndex(item => item.path === selected);
+  const previous = position > 0 ? order[position - 1] : null;
+  const following = position >= 0 && position < order.length - 1 ? order[position + 1] : null;
   const pageNav = '<nav class="page-nav" aria-label="上一篇和下一篇">'
     + (previous ? '<a class="page-nav-item" href="' + docLink(id, previous.path) + '"><small>上一篇</small><span>' + escape(previous.title) + '</span></a>' : '<span class="page-nav-item empty"></span>')
     + (following ? '<a class="page-nav-item next" href="' + docLink(id, following.path) + '"><small>下一篇</small><span>' + escape(following.title) + '</span></a>' : '<span class="page-nav-item empty"></span>')
