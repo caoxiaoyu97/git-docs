@@ -5,7 +5,7 @@ const date = s => s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '
 const docLink = (id, path) => `/repo/${id}?path=${encodeURIComponent(path)}`;
 async function api(url, body, admin = false) {
   const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(admin ? { Authorization: 'Bearer ' + adminPassword } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-  const result = await response.json(); if (!response.ok) throw new Error(result.error || '请求失败'); return result;
+  const result = await response.json(); if (!response.ok) { const error = new Error(result.error || '请求失败'); error.status = response.status; throw error; } return result;
 }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.hidden = false; setTimeout(() => el.hidden = true, 3500); }
 const sidebarPositions = new Map();
@@ -54,7 +54,7 @@ document.addEventListener('toggle', event => {
 function treeHtml(docs, id, selected) {
   const root = { dirs: Object.create(null), files: [] };
   for (const doc of docs) { const parts = doc.path.split('/'); let node = root; for (const part of parts.slice(0, -1)) node = node.dirs[part] ||= { dirs: Object.create(null), files: [] }; node.files.push(doc); }
-  function build(node, parent = "") { return Object.entries(node.dirs).map(([name, sub]) => { const folder = parent ? parent + "/" + name : name; return `<details data-repo="${escape(id)}" data-folder="${escape(folder)}"${openFolders(id).has(folder) ? " open" : ""}><summary>${escape(name)}</summary><div class="tree-nested">${build(sub, folder)}</div></details>`; }).join('') + node.files.map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}<small>${escape(d.path.split('/').at(-1))}</small></a>`).join(''); }
+  function build(node, parent = "") { return Object.entries(node.dirs).sort(([a], [b]) => a.localeCompare(b, 'zh-CN', { numeric: true })).map(([name, sub]) => { const folder = parent ? parent + "/" + name : name; return `<details data-repo="${escape(id)}" data-folder="${escape(folder)}"${openFolders(id).has(folder) ? " open" : ""}><summary>${escape(name)}</summary><div class="tree-nested">${build(sub, folder)}</div></details>`; }).join('') + node.files.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true })).map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}${d.title.replace(/\.md$/i, "") === d.path.split("/").at(-1).replace(/\.md$/i, "") ? "" : `<small>${escape(d.path.split("/").at(-1))}</small>`}</a>`).join(''); }
   return build(root);
 }
 async function repository(id, run, restore) {
@@ -64,8 +64,15 @@ async function repository(id, run, restore) {
     const parts = selected.split('/').slice(0, -1);
     for (let i = 1; i <= parts.length; i++) openFolders(id).add(parts.slice(0, i).join('/'));
   }
-  app.innerHTML = `<div class="workspace"><aside class="sidebar" data-repo="${escape(id)}"><a class="back" href="/">‹ 全部仓库</a><h2>${escape(listing.name)}</h2><label class="search-label" for="search">搜索此仓库</label><input id="search" type="search" placeholder="标题、路径或正文…" autocomplete="off"><div id="tree" class="tree">${treeHtml(listing.documents, id, selected)}</div><div class="side-bottom">${listing.documents.length} 篇文档 · ${escape(listing.branch)}</div></aside><section class="reader"><div id="document">${selected ? '<p class="loading">正在打开文档…</p>' : '<div class="empty"><h2>这个仓库还没有 Markdown 文档</h2><p>提交 .md 文件后会在下次同步时显示。</p></div>'}</div></section></div>`;
+  app.innerHTML = `<div class="workspace"><button class="mobile-directory secondary" aria-expanded="false" aria-controls="repo-sidebar">☰ 文档目录</button><aside id="repo-sidebar" class="sidebar" data-repo="${escape(id)}"><a class="back" href="/">‹ 全部仓库</a><h2>${escape(listing.name)}</h2><label class="search-label" for="search">搜索此仓库</label><input id="search" type="search" placeholder="标题、路径或正文…" autocomplete="off"><div id="tree" class="tree">${treeHtml(listing.documents, id, selected)}</div><div class="side-bottom">${listing.documents.length} 篇文档 · ${escape(listing.branch)}</div></aside><section class="reader"><div id="document">${selected ? '<p class="loading">正在打开文档…</p>' : '<div class="empty"><h2>这个仓库还没有 Markdown 文档</h2><p>提交 .md 文件后会在下次同步时显示。</p></div>'}</div></section></div>`;
   const side = document.querySelector('.sidebar');
+  const directoryButton = document.querySelector('.mobile-directory');
+  directoryButton.onclick = () => {
+    const opened = document.querySelector('.workspace').classList.toggle('directory-open');
+    directoryButton.setAttribute('aria-expanded', String(opened));
+    directoryButton.textContent = opened ? '收起文档目录' : '☰ 文档目录';
+    if (opened) revealSelected();
+  };
   side.scrollTop = sidebarPositions.get(id) || 0;
   function revealSelected() {
     const active = side.querySelector('.tree-file.selected');
@@ -92,12 +99,79 @@ async function repository(id, run, restore) {
     }, 220);
   });
   if (!selected) return;
-  const doc = await api(`/api/repo/${id}/doc?path=${encodeURIComponent(selected)}`); if (run !== generation) return;
+  let doc;
+  try { doc = await api(`/api/repo/${id}/doc?path=${encodeURIComponent(selected)}`); }
+  catch (error) {
+    if (run !== generation) return;
+    document.querySelector('#document').innerHTML = `<div class="empty"><h2>${error.status === 404 ? '这篇文档不存在或已被移除' : '文档加载失败'}</h2><p>${escape(error.message)}</p><button id="retry-document">重新加载</button> <a href="/repo/${escape(id)}">返回仓库首页</a></div>`;
+    document.querySelector('#retry-document').onclick = () => render(true);
+    return;
+  }
+  if (run !== generation) return;
   document.title = `${doc.title} · ${listing.name} · Git Docs`;
   document.querySelector('#document').innerHTML = `<div class="doc-meta"><span>${escape(doc.path)}</span><a href="${escape(doc.source)}" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div><article class="markdown">${doc.html}</article><div class="doc-footer">同步于 ${date(listing.updatedAt)}</div>`;
+  enhanceReading(selected);
   if (restore && Number.isFinite(history.state?.scrollY)) window.scrollTo(0, history.state.scrollY);
   else if (location.hash) { try { document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView(); } catch {} }
   else window.scrollTo(0, 0);
+}
+async function copyText(value) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+    else {
+      const input = document.createElement('textarea'); input.value = value;
+      input.style.cssText = 'position:fixed;left:-9999px;top:0'; document.body.append(input);
+      const focused = document.activeElement; input.select();
+      const copied = document.execCommand('copy'); input.remove(); focused?.focus({ preventScroll: true });
+      if (!copied) throw new Error('copy failed');
+    }
+    toast('已复制');
+  } catch { toast('浏览器未允许复制，请手动选择内容复制'); }
+}
+let disposeReading = () => {};
+function enhanceReading(selected) {
+  const article = document.querySelector('.markdown');
+  const used = new Set([...article.querySelectorAll('[id]')].map(e => e.id));
+  const headings = [...article.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+  headings.forEach((heading, i) => {
+    if (!heading.id) { let value = 'section-' + (i + 1); while (used.has(value)) value += '-'; heading.id = value; used.add(value); }
+    const title = heading.textContent.trim();
+    const button = document.createElement('button'); button.className = 'heading-copy'; button.textContent = '#';
+    button.title = '复制标题链接'; button.setAttribute('aria-label', '复制标题链接：' + title);
+    button.onclick = () => { const url = new URL(location.href); url.searchParams.set('path', selected); url.hash = heading.id; copyText(url.href); };
+    heading.append(button);
+  });
+  article.querySelectorAll('pre').forEach(pre => {
+    const code = pre.querySelector('code'); if (!code) return;
+    const wrapper = document.createElement('div'); wrapper.className = 'code-block'; pre.before(wrapper); wrapper.append(pre);
+    const button = document.createElement('button'); button.className = 'copy-code'; button.textContent = '复制代码';
+    button.onclick = () => copyText(code.textContent); wrapper.append(button);
+  });
+  const sections = headings.filter(h => h.matches('h2,h3'));
+  let links = [];
+  if (sections.length) {
+    const outline = document.createElement('details'); outline.className = 'article-outline'; outline.open = matchMedia('(min-width: 1100px)').matches;
+    const summary = document.createElement('summary'); summary.textContent = '本页大纲'; outline.append(summary);
+    const nav = document.createElement('nav'); nav.setAttribute('aria-label', '本页大纲'); outline.append(nav);
+    links = sections.map(h => {
+      const link = document.createElement('a'); link.href = '#' + encodeURIComponent(h.id);
+      link.textContent = h.cloneNode(true).textContent.replace(/#$/, '').trim(); link.className = h.tagName === 'H3' ? 'outline-sub' : '';
+      nav.append(link); return link;
+    });
+    document.querySelector('.doc-meta').after(outline);
+  }
+  const top = document.createElement('button'); top.className = 'back-top secondary'; top.textContent = '↑ 返回顶部';
+  top.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' }); document.querySelector('.reader').append(top);
+  let frame;
+  function update() {
+    cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
+      top.hidden = window.scrollY < 400;
+      let current = sections[0]; for (const h of sections) { if (h.getBoundingClientRect().top <= 130) current = h; }
+      links.forEach((link, i) => { const active = sections[i] === current; link.classList.toggle('active', active); if (active) link.setAttribute('aria-current', 'location'); else link.removeAttribute('aria-current'); });
+    });
+  }
+  window.addEventListener('scroll', update, { passive: true }); update();
+  disposeReading = () => { window.removeEventListener('scroll', update); cancelAnimationFrame(frame); };
 }
 async function admin(run) {
   if (!adminPassword) {
@@ -120,13 +194,14 @@ async function admin(run) {
   document.querySelectorAll('[data-delete]').forEach(b => b.onclick = async () => { if (!confirm('移除此文档入口？原 Git 仓库不会被修改。')) return; try { await api('/api/admin/delete', { id: b.dataset.delete }, true); render(); } catch (e) { toast(e.message); } });
 }
 async function render(restore = false) {
+  disposeReading();
   restoring = true;
   clearTimeout(refreshTimer); const run = ++generation; document.title = 'Git Docs · 开发文档';
   try {
     if (location.pathname === '/admin') await admin(run);
     else if (location.pathname.startsWith('/repo/')) await repository(location.pathname.split('/')[2], run, restore);
     else await home(run);
-  } catch (e) { if (run === generation) app.innerHTML = `<section class="empty"><h1>暂时无法打开</h1><p>${escape(e.message)}</p><a class="button" href="/">返回首页</a><p class="hint">首次同步需要等待；同步异常可在首页查看原因。</p></section>`; }
+  } catch (e) { if (run === generation) app.innerHTML = `<section class="empty"><h1>暂时无法打开</h1><p>${escape(e.message)}</p><button onclick="location.reload()">重新加载</button> <a class="button" href="/">返回首页</a><p class="hint">首次同步需要等待；同步异常可在首页查看原因。</p></section>`; }
   if (run === generation) { restoring = false; savePosition(); }
 }
 render(true);

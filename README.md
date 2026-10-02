@@ -20,8 +20,8 @@ release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.1.2-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.1.2-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.2.0-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.2.0-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -66,3 +66,14 @@ test/                      模拟 GitLab 与自动化测试
 GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路径部署可在 config.json 的仓库条目保留 gitlabBase，并将 project 设为相对该根地址的 group/repo，正常部署无需配置。
 
 构建脚本会缓存两个官方 Node 基础镜像为 git-docs-node-base:24-amd64 / 24-arm64，后续重复打包复用缓存。如需更新基础镜像，删除这两个仅供构建的本地标签后重新打包，或自行拉取新版本并更新标签。
+
+
+## 1.2.0 阅读体验更新
+
+- 自动生成二、三级标题大纲，支持定位与当前章节高亮。
+- 代码块复制、标题链接复制、返回顶部。
+- 目录自然排序，减少标题与文件名重复显示。
+- 文档不存在或加载失败时保留侧栏，提供重新加载和返回仓库入口。
+- 窄屏默认收起目录，可随时展开。
+
+复制在浏览器不允许时会提示手动复制。更新仍挂载原数据目录，密码和仓库配置继续使用。
