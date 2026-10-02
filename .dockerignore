@@ -1,0 +1,14 @@
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!src/
+!src/**
+!public/
+!public/**
+!test/
+!test/**
+!scripts/
+!scripts/licenses.mjs
+!docker/
+!docker/entry.cjs
