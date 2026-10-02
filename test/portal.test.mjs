@@ -101,5 +101,9 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   assert.equal((await fetch(base + '/api/admin/cache?id=' + repo.id)).status,401);
   const edited=await fetch(base + '/api/admin/repos',{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({id:repo.id,url:mock.base+'/team/replacement',token:'mock-test-token'})});
   assert.equal(edited.status,200);const changed=await(await fetch(base+'/api/repos')).json();assert.ok(!changed.repos.some(r=>r.id===repo.id));
+  const settings = await fetch(base + '/api/admin/settings', {method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({intervalMinutes:7,password:'new-test-password'})});assert.equal(settings.status,200);
+  assert.equal((await fetch(base+'/api/admin/repos',{headers:auth})).status,401);
+  const settingsCheck=await(await fetch(base+'/api/admin/repos',{headers:{Authorization:'Bearer new-test-password'}})).json();assert.equal(settingsCheck.intervalMinutes,7);
+  assert.equal((await fs.readFile(path.join(dir,'admin-password.txt'),'utf8')).trim(),'new-test-password');
   assert.equal(add.status, 200); const after = await (await fetch(base + '/api/repos')).json(); assert.equal(after.repos.length, 2);
 });

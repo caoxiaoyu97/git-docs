@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Store, digest, atomicJson, readJson } from './core.mjs';
 import { createProvider } from './providers.mjs';
 export class BranchStore extends Store {
-  constructor(dir, fetchImpl = fetch) { super(dir, fetchImpl); this.channels = new Map(); this.defaults = new Map(); this.catalogs = new Map(); this.jobs = new Map(); this.cleaning = new Set(); this.active = 0; this.waiters = []; }
+  constructor(dir, fetchImpl = fetch) { super(dir, fetchImpl); this.channels = new Map(); this.defaults = new Map(); this.catalogs = new Map(); this.jobs = new Map(); this.sizes = new Map(); this.cleaning = new Set(); this.active = 0; this.waiters = []; }
   channel(repo, branch) {
     if (!branch || branch.length > 250 || /[\x00-\x1f]/.test(branch)) throw new Error('分支名称无效');
     let group = this.channels.get(repo.id); if (!group) this.channels.set(repo.id, group = new Map());
@@ -40,6 +40,8 @@ export class BranchStore extends Store {
       const info = await readJson(path.join(base, name, 'branch.json'));
       if (!info?.branch || digest(info.branch) !== name) continue;
       const s = this.channel(repo, info.branch); await s.load(repo);
+      s.usage = await readJson(path.join(s.repoDir(), 'usage.json'));
+      this.measure(repo, info.branch);
       const versions = path.join(s.repoDir(), 'versions');
       for (const version of await fs.readdir(versions).catch(() => [])) {
         if (/^[a-f0-9-]{36}$/.test(version) && !await readJson(path.join(versions, version, 'index.json'))) await fs.rm(path.join(versions, version), { recursive: true, force: true });
@@ -89,22 +91,28 @@ export class BranchStore extends Store {
     const names = new Set([...remote.names, ...(this.channels.get(repo.id)?.keys() || []), ...(this.defaultBranch(repo) ? [this.defaultBranch(repo)] : [])]);
     return { defaultBranch: this.defaultBranch(repo), error, branches: [...names].sort((a,b)=>a.localeCompare(b, 'zh-CN', { numeric:true })).map(name => { const snap = this.snapshot(repo,name), state = this.state(repo,name); return { name, remoteDeleted: !error && !remote.names.includes(name), synced: Boolean(snap), count: snap?.documents.length || 0, updatedAt: snap?.updatedAt, ...state }; }) };
   }
-  async cacheInfo(repo) {
-    const rows = [];
-    async function bytes(dir) {
-      let total = 0;
-      for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
-        const file = path.join(dir, entry.name);
-        if (entry.isDirectory()) total += await bytes(file);
-        else if (entry.isFile()) total += (await fs.stat(file).catch(() => ({ size: 0 }))).size;
+  measure(repo, branch) {
+    const channel = this.channels.get(repo.id)?.get(branch), snap = channel?.snapshots.get(repo.id);
+    const key = repo.id + '\0' + branch;
+    if (!snap || Number.isFinite(snap.totalBytes) || channel.usage?.root === path.basename(snap.root) || this.sizes.has(key)) return;
+    const job = (async () => {
+      let bytes = 0;
+      for (let i = 0; i < snap.files.length; i += 32) {
+        const sizes = await Promise.all(snap.files.slice(i, i + 32).map(file => fs.stat(path.join(snap.root, 'files', file)).then(s => s.size)));
+        bytes += sizes.reduce((a,b) => a+b, 0);
       }
-      return total;
-    }
-    for (const [branch, channel] of this.channels.get(repo.id) || []) {
+      const usage = { root: path.basename(snap.root), bytes };
+      await atomicJson(path.join(channel.repoDir(), 'usage.json'), usage); channel.usage = usage;
+    })().catch(() => {}).finally(() => this.sizes.delete(key));
+    this.sizes.set(key, job);
+  }
+  async cacheInfo(repo) {
+    return [...(this.channels.get(repo.id) || [])].map(([branch, channel]) => {
       const snap = this.snapshot(repo, branch);
-      rows.push({ branch, count: snap?.documents.length || 0, bytes: await bytes(channel.repoDir()), updatedAt: snap?.updatedAt, checking: this.jobs.has(repo.id + '\0' + branch), protected: branch === this.defaultBranch(repo) });
-    }
-    return rows;
+      const bytes = snap?.totalBytes ?? (channel.usage?.root === path.basename(snap?.root || '') ? channel.usage.bytes : null);
+      this.measure(repo, branch);
+      return { branch, count: snap?.documents.length || 0, bytes, updatedAt: snap?.updatedAt, checking: this.jobs.has(repo.id + '\0' + branch), protected: branch === this.defaultBranch(repo) };
+    });
   }
   async clearCache(repo, branch) {
     if (this.busy(repo.id)) throw new Error('仓库正在同步或清理，请稍后重试');
@@ -113,6 +121,7 @@ export class BranchStore extends Store {
     if (!channel) throw new Error('此分支没有本地缓存');
     this.cleaning.add(repo.id);
     try {
+      await this.sizes.get(repo.id + '\0' + branch);
       const directory = channel.repoDir();
       const expected = path.join(this.repoDir(repo.id), 'branches', digest(branch));
       if (path.resolve(directory) !== path.resolve(expected)) throw new Error('缓存路径无效');

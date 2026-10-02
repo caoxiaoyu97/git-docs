@@ -98,7 +98,7 @@ export async function extractDocs(source, destination) {
     await pipeline(source, meter(512 * 1024 * 1024, '压缩包超过 512MB'), createGunzip(), meter(2 * 1024 ** 3, '解压数据超过 2GB'), extractor);
   } finally { source.off('error', captureError); await Promise.allSettled([...pending]); }
   documents.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN'));
-  return { documents, files: [...files] };
+  return { documents, files: [...files], totalBytes: total };
 }
 
 export class Store {

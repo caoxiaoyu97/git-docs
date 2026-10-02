@@ -88,6 +88,21 @@ async function serve() {
         if (req.headers['content-type'] !== 'application/json') return send(415, { error: '需要 JSON 请求' });
         let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 32768) return send(413, { error: '请求过大' }); }
         let body; try { body = JSON.parse(raw || '{}'); } catch { return send(400, { error: '请求内容无效' }); }
+        if (route === '/api/admin/settings') {
+          if (editing) return send(409, { error: '正在保存，请稍后重试' });
+          const interval = Number(body.intervalMinutes);
+          if (!Number.isInteger(interval) || interval < 1 || interval > 1440) return send(400, { error: '同步间隔需为1–1440分钟的整数' });
+          const password = String(body.password || '');
+          if (password && (password.length < 10 || password.length > 256)) return send(400, { error: '密码需为10–256位' });
+          editing = true;
+          try {
+            const next = { ...config, intervalMinutes: interval, ...(password ? {adminHash: digest(password)} : {}) };
+            await atomicJson(configFile, next); config = next;
+            if (password) await fs.writeFile(path.join(data, 'admin-password.txt'), password + '\n', {mode:0o600});
+            clearInterval(timer); timer = setInterval(tick, interval * 60000);
+            return send(200, {ok:true});
+          } finally { editing = false; }
+        }
         if (route === '/api/admin/cache-delete') {
           const repo = config.repos.find(r => r.id === body.id); if (!repo) return send(404, { error: '仓库不存在' });
           if (editing) return send(409, { error: '正在保存配置，请稍后重试' });
@@ -156,7 +171,7 @@ async function serve() {
         if (apiMatch[2] === 'docs') return send(200, { name: repo.name, documents: snapshot.documents.map(({ text, ...d }) => d), updatedAt: snapshot.updatedAt, branch: snapshot.branch });
         if (apiMatch[2] === 'search') {
           const q = (u.searchParams.get('q') || '').trim().toLowerCase().slice(0, 200);
-          const results = q ? snapshot.documents.filter(d => (d.title + '\n' + d.path + '\n' + d.text).toLowerCase().includes(q)).slice(0, 100).map(d => {
+          const results = q ? snapshot.documents.filter(d => (d.title + '\n' + d.path + '\n' + d.text).toLowerCase().includes(q)).sort((a,b) => { const score = d => (d.title.toLowerCase() === q ? 100 : d.title.toLowerCase().includes(q) ? 50 : 0) + (d.path.toLowerCase().includes(q) ? 20 : 0); return score(b) - score(a) || a.path.localeCompare(b.path, 'zh-CN', {numeric:true}); }).slice(0, 100).map(d => {
             const pos = d.text.toLowerCase().indexOf(q);
             return { path: d.path, title: d.title, snippet: d.text.slice(Math.max(0, pos - 40), Math.max(0, pos - 40) + 180) };
           }) : [];
@@ -192,7 +207,7 @@ async function serve() {
   server.requestTimeout = 20000;
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host || '0.0.0.0', resolve); });
   console.log(`Git Docs 已启动：http://localhost:${config.port}  |  每 ${config.intervalMinutes} 分钟同步  |  ${config.repos.length} 个仓库`);
-  const timer = setInterval(tick, config.intervalMinutes * 60000); void tick();
+  let timer = setInterval(tick, config.intervalMinutes * 60000); void tick();
   const stop = () => { stopping = true; clearInterval(timer); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 5000).unref(); };
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
 }
