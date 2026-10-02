@@ -35,3 +35,38 @@ test('branches isolate content/assets, coalesce concurrent clicks, bound downloa
  const before=counts.get('main');await restarted.sync(repo,'main');assert.equal(counts.get('main'),before);
  assert.equal(restarted.snapshot(repo,'unknown'),undefined);assert.equal(restarted.channels.get(repo.id).size,4);
 });
+
+test('failed updates preserve cache, cleanup is guarded, and interrupted staging is recovered', async () => {
+ const dir=await fs.mkdtemp(path.join(process.cwd(),'.test-recovery-'));
+ let sha='a'.repeat(40), deny=false, hold, start;
+ const fake=async input=>{
+   const u=new URL(input);
+   if(deny)return new Response('{}',{status:404});
+   if(u.pathname.endsWith('/branches'))return Response.json([{name:'main'},{name:'dev'}]);
+   if(u.pathname.includes('/branches/'))return Response.json({commit:{id:sha}});
+   if(u.pathname.endsWith('/archive.tar.gz')){if(start)start();if(hold)await hold;return new Response(await archive([{name:'root/README.md',body:'# '+sha}]));}
+   return Response.json({default_branch:'main'});
+ };
+ const repo=repoConfig({url:'https://example.com/team/repo'}), store=new BranchStore(dir,fake);
+ await store.sync(repo);await store.sync(repo,'dev');const previous=store.snapshot(repo,'dev');
+ deny=true;await store.sync(repo,'dev');assert.equal(store.snapshot(repo,'dev'),previous);assert.match(store.state(repo,'dev').error,/不存在/);
+ deny=false;sha='b'.repeat(40);let release;hold=new Promise(r=>release=r);let started=new Promise(r=>start=r);
+ const job=store.sync(repo,'dev');await started;
+ await assert.rejects(store.clearCache(repo,'dev'),/正在同步/);release();await job;hold=null;start=null;
+ assert.equal(store.state(repo,'dev').phase,'complete');
+ const channel=store.channel(repo,'dev');const orphan=path.join(channel.repoDir(),'versions','12345678-1234-1234-1234-123456789012');await fs.mkdir(orphan,{recursive:true});await fs.writeFile(path.join(orphan,'partial'),'partial');
+ const restarted=new BranchStore(dir,fake);await restarted.load(repo);assert.ok(restarted.snapshot(repo,'main'));assert.ok(restarted.snapshot(repo,'dev'));await assert.rejects(fs.stat(orphan));
+ const usage=await restarted.cacheInfo(repo);assert.ok(usage.find(b=>b.branch==='dev').bytes>0);
+ await assert.rejects(restarted.clearCache(repo,'main'),/默认/);
+ await restarted.clearCache(repo,'dev');assert.equal(restarted.snapshot(repo,'dev'),undefined);
+ const next=new BranchStore(dir,fake);await next.load(repo);assert.equal(next.snapshot(repo,'dev'),undefined);await next.sync(repo,'dev');assert.ok(next.snapshot(repo,'dev'));
+});
+
+test('disk-full during publication retains the previous readable snapshot', async () => {
+ const dir=await fs.mkdtemp(path.join(process.cwd(),'.test-disk-'));let sha='a'.repeat(40);
+ const fake=async input=>new URL(input).pathname.endsWith('/archive.tar.gz') ? new Response(await archive([{name:'root/README.md',body:'# '+sha}])) : Response.json(new URL(input).pathname.includes('/branches/')?{commit:{id:sha}}:{default_branch:'main'});
+ const repo=repoConfig({url:'https://example.com/team/repo'}),store=new BranchStore(dir,fake);await store.sync(repo);const old=store.snapshot(repo,'main');sha='b'.repeat(40);
+ const original=fs.writeFile;fs.writeFile=async(file,...args)=>{if(String(file).includes('current.json.')){const e=new Error('disk full');e.code='ENOSPC';throw e;}return original(file,...args);};
+ try{await store.sync(repo,'main');}finally{fs.writeFile=original;}
+ assert.equal(store.snapshot(repo,'main'),old);assert.match(store.state(repo,'main').error,/空间不足/);
+});

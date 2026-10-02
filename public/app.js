@@ -61,12 +61,37 @@ function treeHtml(docs, id, selected) {
   function build(node, parent = "") { return Object.entries(node.dirs).sort(([a], [b]) => a.localeCompare(b, 'zh-CN', { numeric: true })).map(([name, sub]) => { const folder = parent ? parent + "/" + name : name; return `<details data-repo="${escape(id)}" data-folder="${escape(folder)}"${openFolders(id).has(folder) ? " open" : ""}><summary>${escape(name)}</summary><div class="tree-nested">${build(sub, folder)}</div></details>`; }).join('') + node.files.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true })).map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}${d.title.replace(/\.md$/i, "") === d.path.split("/").at(-1).replace(/\.md$/i, "") ? "" : `<small>${escape(d.path.split("/").at(-1))}</small>`}</a>`).join(''); }
   return build(root);
 }
-let branchTimer;
+let branchTimer, branchListTimer;
+const phaseLabel = s => s.checking ? ({ queued: '排队中', checking: '检查更新', downloading: '下载中', processing: '处理文档中' }[s.phase] || '同步中') : s.error ? '更新失败' : s.synced ? '已缓存，可阅读' : '未同步';
 async function mountBranches(id, run, current) {
+  clearTimeout(branchListTimer);
   const target = document.querySelector('#branch-picker'); if (!target) return;
   try {
     const listing = await api(`/api/repo/${id}/branches`); if (run !== generation || !target.isConnected) return;
-    target.innerHTML = `<details class="branch-menu"><summary>分支：${escape(current || listing.defaultBranch || '默认分支')} ▾</summary><input class="branch-filter" placeholder="筛选分支" aria-label="筛选分支"><div class="branch-list">${listing.branches.map(b => `<button class="branch-option ${b.checking ? 'syncing' : b.synced ? 'synced' : b.error ? 'failed' : 'unsynced'}" data-branch="${escape(b.name)}" aria-current="${b.name === current ? 'true' : 'false'}"><span>${escape(b.name)}</span><small>${b.checking ? (b.queued ? '排队中' : '同步中') : b.synced ? '已同步 · ' + b.count + ' 篇' : b.error ? '同步失败，可重试' : '未同步'}${b.name === current ? ' · 当前' : ''}</small></button>`).join('')}</div>${listing.error ? '<p class="error">' + escape(listing.error) + '</p>' : ''}</details>`;
+    const opened = target.querySelector('details')?.open;
+    const filter = target.querySelector('input')?.value || '';
+    const focused = document.activeElement === target.querySelector('input');
+    const scroll = target.querySelector('.branch-list')?.scrollTop || 0;
+    target.innerHTML = `<details class="branch-menu"><summary>分支：${escape(current || listing.defaultBranch || '默认分支')} ▾</summary><input class="branch-filter" placeholder="筛选分支" aria-label="筛选分支"><div class="branch-list">${listing.branches.map(b => `<button class="branch-option ${b.checking ? 'syncing' : b.synced ? 'synced' : b.error ? 'failed' : 'unsynced'}" data-branch="${escape(b.name)}" aria-current="${b.name === current ? 'true' : 'false'}"><span>${escape(b.name)}</span><small>${phaseLabel(b) + (b.synced ? ' · ' + b.count + ' 篇' : '') + (b.remoteDeleted ? ' · 远端已删除' : '')}${b.name === current ? ' · 当前' : ''}</small></button>`).join('')}</div>${listing.error ? '<p class="error">' + escape(listing.error) + '</p>' : ''}</details>`;
+    const selected = listing.branches.find(b => b.name === current);
+    if (selected) {
+      const note = document.createElement('div'); note.className = 'branch-status-note';
+      note.textContent = phaseLabel(selected) + '；最后成功同步：' + date(selected.updatedAt) + (selected.error ? '；' + selected.error : '');
+      if (selected.error) {
+        const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = '重试更新';
+        retry.onclick = async () => { retry.disabled = true; try { await api(`/api/repo/${id}/branch-sync?branch=${encodeURIComponent(current)}`, {}); if (run === generation) mountBranches(id, run, current); } catch(e) { toast(e.message); retry.disabled = false; } }; note.append(retry);
+      }
+      const doc = document.querySelector('#document');
+      if (doc?.dataset.updatedAt && selected.updatedAt && doc.dataset.updatedAt !== selected.updatedAt) {
+        const fresh = document.createElement('button'); fresh.className = 'secondary'; fresh.textContent = '文档有更新，刷新查看'; fresh.onclick = () => render(true); note.append(fresh);
+      }
+      target.prepend(note);
+    }
+    target.querySelector('details').open = Boolean(opened);
+    target.querySelector('.branch-filter').value = filter;
+    target.querySelector('.branch-list').scrollTop = scroll;
+    if (focused) target.querySelector('.branch-filter').focus({ preventScroll: true });
+    target.querySelectorAll('[data-branch]').forEach(button => button.hidden = !button.dataset.branch.toLowerCase().includes(filter.toLowerCase()));
     target.querySelector('.branch-filter').oninput = e => { for (const button of target.querySelectorAll('[data-branch]')) button.hidden = !button.dataset.branch.toLowerCase().includes(e.target.value.toLowerCase()); };
     target.querySelectorAll('[data-branch]').forEach(button => button.onclick = () => {
       if (button.dataset.branch === current && document.querySelector('.markdown')) return;
@@ -74,6 +99,7 @@ async function mountBranches(id, run, current) {
       navigate(u.pathname + u.search);
     });
   } catch (e) { if (run === generation && target.isConnected) { target.textContent = '分支列表加载失败：' + e.message; const retry = document.createElement('button'); retry.textContent = '重试'; retry.onclick = () => mountBranches(id, run, current); target.append(retry); } }
+  finally { if (run === generation && target.isConnected) branchListTimer = setTimeout(() => mountBranches(id, run, current), 5000); }
 }
 async function waitForBranch(id, branch, run) {
   app.innerHTML = `<section class="branch-wait"><a href="/repo/${id}">返回默认分支</a><h2>${escape(branch)}</h2><p id="branch-progress" role="status">正在同步，请等待…</p><p>同步在后台进行，重复点击不会重复下载，也可以先查看其他分支。</p><div id="branch-picker"></div><button id="retry-branch" hidden>重试同步</button></section>`;
@@ -88,7 +114,7 @@ async function waitForBranch(id, branch, run) {
         const status = await api(`/api/repo/${id}/branch-status?branch=${encodeURIComponent(branch)}`);
         if (run !== generation) return;
         if (status.synced) return render();
-        document.querySelector('#branch-progress').textContent = status.error || (status.queued ? '正在排队同步，请等待…' : '正在同步，请等待…');
+        document.querySelector('#branch-progress').textContent = status.error || (phaseLabel(status) + '，请等待…');
         if (status.error && !status.checking) { retry.hidden = false; void mountBranches(id, run, branch); return; }
         branchTimer = setTimeout(poll, 2000);
       } catch(e) { if (run === generation) { document.querySelector('#branch-progress').textContent = e.message; retry.hidden = false; } }
@@ -159,6 +185,7 @@ async function repository(id, run, restore) {
   if (run !== generation) return;
   document.title = `${doc.title} · ${listing.name} · Git Docs`;
   document.querySelector('#document').innerHTML = `<div class="doc-meta"><span>${escape(doc.path)}</span><a href="${escape(doc.source)}" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div><article class="markdown">${doc.html}</article><div class="doc-footer">同步于 ${date(listing.updatedAt)}</div>`;
+  document.querySelector('#document').dataset.updatedAt = listing.updatedAt || '';
   enhanceReading(selected);
   if (restore && Number.isFinite(history.state?.scrollY)) window.scrollTo(0, history.state.scrollY);
   else if (location.hash) { try { document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView(); } catch {} }
@@ -228,7 +255,7 @@ async function admin(run) {
     document.querySelector('#login').onsubmit = async e => { e.preventDefault(); adminPassword = document.querySelector('#password').value; try { await api('/api/admin/repos', undefined, true); render(); } catch (err) { adminPassword = ''; document.querySelector('#error').textContent = err.message; } }; return;
   }
   const { repos } = await api('/api/admin/repos', undefined, true); if (run !== generation) return;
-  app.innerHTML = `<section class="admin"><div class="heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>仓库管理</h1><p>保存后立即同步，之后按设置的间隔自动检查。</p></div><button id="logout" class="secondary">退出管理</button></div><div class="admin-grid"><div><h2>已连接仓库 <span class="muted">${repos.length}</span></h2><div class="repo-list">${repos.map(r => `<div class="managed-repo"><h3>${escape(r.name)}</h3><p>${escape(r.url)}</p><small>${escape(r.branch || '默认分支')}</small><div class="actions"><button class="secondary" data-edit="${r.id}">编辑</button><button class="secondary" data-sync="${r.id}">立即同步</button><button class="text-button" data-delete="${r.id}">移除</button></div></div>`).join('') || '<p class="muted">尚未添加仓库。</p>'}</div></div><form id="repo-form" class="form-card"><h2 id="form-title">添加仓库</h2><input type="hidden" name="id"><label>显示名称<input name="name" placeholder="留空使用仓库名" maxlength="100"></label><label>仓库 HTTP/HTTPS 地址<input name="url" type="url" placeholder="https://github.com/owner/repo.git" required></label><input type="hidden" name="branch"><p class="hint">首次自动同步仓库默认分支；其他分支可在阅读页切换。</p><label>访问 Token<input name="token" type="password" autocomplete="new-password" placeholder="可选；留空匿名访问公开仓库"></label><p id="provider-hint" class="hint">支持 GitLab、GitHub、Gitee，按仓库地址自动识别。</p><p class="hint">填写 Token 优先认证；未填写则匿名读取公开仓库。编辑时留空保留原令牌。</p><div id="clear-token-row" hidden><label class="inline-check"><input type="checkbox" name="clearToken">清除已保存 Token，改为匿名访问</label></div><p id="form-error" class="error"></p><div class="actions"><button type="submit">保存并同步</button><button id="reset" type="button" class="secondary">清空</button></div></form></div></section>`;
+  app.innerHTML = `<section class="admin"><div class="heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>仓库管理</h1><p>保存后立即同步，之后按设置的间隔自动检查。</p></div><button id="logout" class="secondary">退出管理</button></div><div class="admin-grid"><div><h2>已连接仓库 <span class="muted">${repos.length}</span></h2><div class="repo-list">${repos.map(r => `<div class="managed-repo"><h3>${escape(r.name)}</h3><p>${escape(r.url)}</p><small>${escape(r.branch || '默认分支')}</small><div class="actions"><button class="secondary" data-edit="${r.id}">编辑</button><button class="secondary" data-sync="${r.id}">立即同步</button><button class="secondary" data-cache="${r.id}">分支缓存</button><button class="text-button" data-delete="${r.id}">移除</button></div></div>`).join('') || '<p class="muted">尚未添加仓库。</p>'}</div></div><form id="repo-form" class="form-card"><h2 id="form-title">添加仓库</h2><input type="hidden" name="id"><label>显示名称<input name="name" placeholder="留空使用仓库名" maxlength="100"></label><label>仓库 HTTP/HTTPS 地址<input name="url" type="url" placeholder="https://github.com/owner/repo.git" required></label><input type="hidden" name="branch"><p class="hint">首次自动同步仓库默认分支；其他分支可在阅读页切换。</p><label>访问 Token<input name="token" type="password" autocomplete="new-password" placeholder="可选；留空匿名访问公开仓库"></label><p id="provider-hint" class="hint">支持 GitLab、GitHub、Gitee，按仓库地址自动识别。</p><p class="hint">填写 Token 优先认证；未填写则匿名读取公开仓库。编辑时留空保留原令牌。</p><div id="clear-token-row" hidden><label class="inline-check"><input type="checkbox" name="clearToken">清除已保存 Token，改为匿名访问</label></div><p id="form-error" class="error"></p><div class="actions"><button type="submit">保存并同步</button><button id="reset" type="button" class="secondary">清空</button></div></form></div></section>`;
   document.querySelector('#logout').onclick = () => { adminPassword = ''; render(); };
   const form = document.querySelector('#repo-form');
   function reset() { form.reset(); document.querySelector('#clear-token-row').hidden = true; form.elements.id.value = ''; form.elements.token.required = false; document.querySelector('#form-title').textContent = '添加仓库'; document.querySelector('#form-error').textContent = ''; }
@@ -240,10 +267,28 @@ async function admin(run) {
   form.onsubmit = async e => { e.preventDefault(); const button = form.querySelector('[type=submit]'); button.disabled = true; try { await api('/api/admin/repos', Object.fromEntries(new FormData(form)), true); toast('已保存，正在同步'); render(); } catch (err) { document.querySelector('#form-error').textContent = err.message; } finally { button.disabled = false; } };
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const repo = repos.find(r => r.id === b.dataset.edit); for (const key of ['id', 'name', 'url', 'branch']) form.elements[key].value = repo[key] || ''; form.elements.token.value = ''; form.elements.token.required = false; form.elements.clearToken.checked = false; document.querySelector('#clear-token-row').hidden = !repo.hasToken; document.querySelector('#form-title').textContent = '编辑仓库'; form.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   document.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => { try { await api('/api/admin/sync', { id: b.dataset.sync }, true); toast('已开始同步，可在首页查看结果'); } catch (e) { toast(e.message); } });
+  document.querySelectorAll('[data-cache]').forEach(button => button.onclick = async () => {
+    let panel = button.closest('.managed-repo').querySelector('.cache-panel');
+    if (!panel) { panel = document.createElement('div'); panel.className = 'cache-panel'; button.closest('.managed-repo').append(panel); }
+    const load = async () => {
+      panel.textContent = '正在统计缓存空间…';
+      try {
+        const result = await api('/api/admin/cache?id=' + button.dataset.cache, undefined, true);
+        if (run !== generation) return;
+        panel.innerHTML = result.branches.map(b => `<div class="cache-row"><strong>${escape(b.branch)}</strong><span>${b.count} 篇 · ${(b.bytes / 1024 / 1024).toFixed(2)} MB</span><small>最后成功同步：${date(b.updatedAt)}</small><button class="secondary" data-clear="${escape(b.branch)}" ${b.checking || b.protected ? 'disabled' : ''}>${b.protected ? '默认分支保留' : b.checking ? '正在同步' : '清理本地缓存'}</button></div>`).join('') || '暂无缓存';
+        panel.querySelectorAll('[data-clear]').forEach(clear => clear.onclick = async () => {
+          if (!confirm('清理分支 ' + clear.dataset.clear + ' 的本地文档缓存？原 Git 分支不会删除，下次访问会重新同步。')) return;
+          clear.disabled = true;
+          try { await api('/api/admin/cache-delete', { id: button.dataset.cache, branch: clear.dataset.clear }, true); toast('缓存已清理'); await load(); }
+          catch(e) { toast(e.message); clear.disabled = false; }
+        });
+      } catch(e) { panel.textContent = e.message; }
+    }; await load();
+  });
   document.querySelectorAll('[data-delete]').forEach(b => b.onclick = async () => { if (!confirm('移除此文档入口？原 Git 仓库不会被修改。')) return; try { await api('/api/admin/delete', { id: b.dataset.delete }, true); render(); } catch (e) { toast(e.message); } });
 }
 async function render(restore = false) {
-  clearTimeout(branchTimer);
+  clearTimeout(branchTimer); clearTimeout(branchListTimer);
   disposeReading();
   restoring = true;
   clearTimeout(refreshTimer); const run = ++generation; document.title = 'Git Docs · 开发文档';

@@ -119,29 +119,32 @@ export class Store {
   }
   async doSync(repo) {
     const start = new Date().toISOString(); let stage;
-    this.statuses.set(repo.id, { checking: true, checkedAt: start });
+    this.statuses.set(repo.id, { checking: true, phase: 'checking', checkedAt: start });
     try {
       const provider = createProvider(repo, this.fetchImpl, { cacheDir: path.join(this.repoDir(repo.id), 'public-cache') });
       const { branch, sha } = await provider.latest();
       const old = this.snapshots.get(repo.id);
       if (old?.sha === sha && old.branch === branch && old.project === repo.project && old.gitlabBase === repo.gitlabBase && (old.provider || 'gitlab') === provider.type) {
-        this.statuses.set(repo.id, { checking: false, checkedAt: new Date().toISOString() }); return;
+        this.statuses.set(repo.id, { checking: false, phase: 'complete', checkedAt: new Date().toISOString() }); return;
       }
       const version = randomUUID(); stage = path.join(this.repoDir(repo.id), 'versions', version);
+      this.statuses.set(repo.id, { checking: true, phase: 'downloading', checkedAt: start });
       const response = await provider.archive(sha);
-      const index = await extractDocs(Readable.fromWeb(response.body), path.join(stage, 'files'));
+      const source = Readable.fromWeb(response.body);
+      source.once('end', () => this.statuses.set(repo.id, { checking: true, phase: 'processing', checkedAt: start }));
+      const index = await extractDocs(source, path.join(stage, 'files'));
       const snapshot = { ...index, sha, branch, project: repo.project, provider: provider.type, gitlabBase: repo.gitlabBase, updatedAt: new Date().toISOString() };
       await atomicJson(path.join(stage, 'index.json'), snapshot);
       await atomicJson(path.join(this.repoDir(repo.id), 'current.json'), { version });
       this.snapshots.set(repo.id, { ...snapshot, root: stage }); stage = null;
-      this.statuses.set(repo.id, { checking: false, checkedAt: new Date().toISOString() });
+      this.statuses.set(repo.id, { checking: false, phase: 'complete', checkedAt: new Date().toISOString() });
       // Keep previous version for in-flight readers; bound disk growth to two snapshots.
       const versions = await fs.readdir(path.join(this.repoDir(repo.id), 'versions'));
       for (const v of versions) if (/^[a-f0-9-]{36}$/.test(v) && v !== version && (!old || path.basename(old.root) !== v)) {
         await fs.rm(path.join(this.repoDir(repo.id), 'versions', v), { recursive: true, force: true });
       }
     } catch (e) {
-      this.statuses.set(repo.id, { checking: false, checkedAt: new Date().toISOString(), error: repo.token ? e.message.replaceAll(repo.token, '[已隐藏]') : e.message });
+      this.statuses.set(repo.id, { checking: false, phase: 'failed', checkedAt: new Date().toISOString(), error: e.code === 'ENOSPC' ? '存储空间不足，请清理缓存后重试' : repo.token ? e.message.replaceAll(repo.token, '[已隐藏]') : e.message });
     } finally {
       if (stage) await fs.rm(stage, { recursive: true, force: true }).catch(() => {});
     }

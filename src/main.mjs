@@ -79,10 +79,20 @@ async function serve() {
         if (route === '/api/admin/repos' && req.method === 'GET') {
           return send(200, { repos: config.repos.map(({ token, ...r }) => ({ ...r, hasToken: Boolean(token) })), intervalMinutes: config.intervalMinutes });
         }
+        if (route === '/api/admin/cache' && req.method === 'GET') {
+          const repo = config.repos.find(r => r.id === u.searchParams.get('id'));
+          if (!repo) return send(404, { error: '仓库不存在' });
+          return send(200, { branches: await store.cacheInfo(repo) });
+        }
         if (req.method !== 'POST') return send(405, { error: '不支持此操作' });
         if (req.headers['content-type'] !== 'application/json') return send(415, { error: '需要 JSON 请求' });
         let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 32768) return send(413, { error: '请求过大' }); }
         let body; try { body = JSON.parse(raw || '{}'); } catch { return send(400, { error: '请求内容无效' }); }
+        if (route === '/api/admin/cache-delete') {
+          const repo = config.repos.find(r => r.id === body.id); if (!repo) return send(404, { error: '仓库不存在' });
+          if (editing) return send(409, { error: '正在保存配置，请稍后重试' });
+          await store.clearCache(repo, body.branch); return send(200, { ok: true });
+        }
         if (route === '/api/admin/sync') {
           const repo = config.repos.find(r => r.id === body.id); if (!repo) return send(404, { error: '仓库不存在' });
           void store.sync(repo); return send(202, { ok: true });
@@ -94,10 +104,11 @@ async function serve() {
             if (body.id && !previous) return send(404, { error: '仓库不存在' });
             if (previous && store.busy(previous.id)) return send(409, { error: '仓库正在同步，请完成后修改' });
             const repo = repoConfig(body, previous);
-            const next = { ...config, repos: previous ? config.repos.map(r => r.id === repo.id ? repo : r) : [...config.repos, repo] };
+            if (previous && previous.url !== repo.url) repo.id = repoConfig(body).id;
+            const next = { ...config, repos: previous ? config.repos.map(r => r.id === previous.id ? repo : r) : [...config.repos, repo] };
             if (next.repos.length > 100) return send(400, { error: '最多配置 100 个仓库' });
             await atomicJson(configFile, next); config = next;
-            if (previous && previous.url !== repo.url) store.forget(repo.id);
+            if (previous && previous.url !== repo.url) store.forget(previous.id);
             store.catalogs.delete(repo.id);
             void store.sync(repo); return send(200, { ok: true });
           } finally { editing = false; }
@@ -117,7 +128,7 @@ async function serve() {
       if (branchRoute) {
         const repo = config.repos.find(r => r.id === branchRoute[1]);
         if (!repo) return send(404, { error: '仓库不存在' });
-        if (editing) return send(409, { error: '正在保存仓库，请稍后重试' });
+        if (editing || store.cleaning.has(repo.id)) return send(409, { error: '正在保存或清理仓库，请稍后重试' });
         if (branchRoute[2] === 'branches' && req.method === 'GET') return send(200, await store.branches(repo));
         const branch = u.searchParams.get('branch');
         if (!branch || branch.length > 250 || /[\x00-\x1f]/.test(branch)) return send(400, { error: '分支名称无效' });
@@ -128,7 +139,7 @@ async function serve() {
           const listing = await store.branches(repo);
           if (!config.repos.includes(repo) || editing) return send(409, { error: '仓库配置已变更，请重试' });
           if (!listing.branches.some(b => b.name === branch)) return send(404, { error: listing.error || '分支不存在' });
-          if (!store.snapshot(repo, branch)) void store.sync(repo, branch);
+          if (!store.snapshot(repo, branch) || store.state(repo, branch).error) void store.sync(repo, branch);
           return send(202, { synced: Boolean(store.snapshot(repo, branch)), ...store.state(repo, branch) });
         }
         return send(405, { error: '不支持此操作' });

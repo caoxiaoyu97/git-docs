@@ -97,5 +97,9 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   const branchDoc=await(await fetch(base+`/api/repo/${repo.id}/doc?branch=dev&path=README.md`)).json();assert.match(branchDoc.source,/\/dev\//);assert.match(branchDoc.html,/branch=dev/);
   assert.equal((await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://unrelated.invalid'},body:'{}'})).status,403);
   const add = await fetch(base + '/api/admin/repos', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '第二个仓库', url: mock.base + '/team/another', token: 'mock-test-token' }) });
+  const cache = await(await fetch(base + '/api/admin/cache?id=' + repo.id, {headers:auth})).json();assert.ok(cache.branches.find(b=>b.branch==='dev').bytes>0);
+  assert.equal((await fetch(base + '/api/admin/cache?id=' + repo.id)).status,401);
+  const edited=await fetch(base + '/api/admin/repos',{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({id:repo.id,url:mock.base+'/team/replacement',token:'mock-test-token'})});
+  assert.equal(edited.status,200);const changed=await(await fetch(base+'/api/repos')).json();assert.ok(!changed.repos.some(r=>r.id===repo.id));
   assert.equal(add.status, 200); const after = await (await fetch(base + '/api/repos')).json(); assert.equal(after.repos.length, 2);
 });
