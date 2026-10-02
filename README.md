@@ -50,6 +50,7 @@ docker/entry.cjs            首次自动初始化与密码重置
 Dockerfile                 多阶段构建
 scripts/docker-package.mjs 两种架构构建、导出、压缩
 scripts/licenses.mjs       第三方许可收集
+scripts/build.mjs          打包应用并按 package.json 注入版本号
 test/                      模拟 GitLab 与自动化测试
 ```
 
@@ -61,7 +62,7 @@ test/                      模拟 GitLab 与自动化测试
 
 主要限制：单篇 MD 2MB、单资源 25MB、每仓库文档与资源总量 256MB、仓库压缩包 512MB；不展开 Git 子模块，不下载 LFS 图片，不专门渲染 Mermaid。阅读页面不继承 GitLab 用户权限，因此端口应按需要限制访问范围。
 
-打包不会包含本地 data、Token、文档缓存或 release 归档；`.dockerignore` 使用白名单。修改应用版本号时请同步 Dockerfile 的版本标签和部署说明中的镜像名。
+打包不会包含本地 data、Token、文档缓存或镜像归档；`.dockerignore` 使用白名单。版本号只需修改 `package.json`：镜像标签、镜像内的版本标签和请求 User-Agent 都由它自动生成，发布时再同步 3-部署说明.md 里的示例标签即可。
 
 ## 平台识别与访问权限
 

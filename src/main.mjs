@@ -44,15 +44,16 @@ async function initialize() {
       catch (e) { console.log(`未添加：${e.message}`); }
     }
     await atomicJson(configFile, { version: 1, host: '0.0.0.0', port, intervalMinutes, adminHash: digest(adminSecret), repos });
-    console.log(`\n初始化完成，已配置 ${repos.length} 个仓库。运行 bash start.sh，然后访问 http://服务器IP:${port}\n`);
+    console.log(`\n初始化完成，已配置 ${repos.length} 个仓库。运行 npm start（Docker 部署下重启容器即可），然后访问 http://服务器IP:${port}\n`);
   } finally { rl.close(); }
 }
 
 async function serve() {
   let config = await readJson(configFile);
-  if (!config) throw new Error('请先运行 bash init.sh 完成初始化');
+  if (!config) throw new Error('尚未初始化，请先运行 npm run init（Docker 部署会自动初始化）');
   const store = new BranchStore(data);
   for (const repo of config.repos) await store.load(repo);
+  await store.prune(config.repos.map(r => r.id));
   let stopping = false; let ticking = false; let editing = false;
   async function tick() {
     if (ticking || stopping) return; ticking = true;
@@ -60,9 +61,9 @@ async function serve() {
     finally { ticking = false; }
   }
   function reposList() {
-    return config.repos.map(({ id, name }) => {
-      const snapshot = store.snapshots.get(id); const status = store.statuses.get(id) || {};
-      return { id, name, count: snapshot?.documents.length || 0, updatedAt: snapshot?.updatedAt, sha: snapshot?.sha?.slice(0, 8), branch: snapshot?.branch, ...status };
+    return config.repos.map(repo => {
+      const snapshot = store.snapshots.get(repo.id); const status = store.defaultStatus(repo);
+      return { id: repo.id, name: repo.name, count: snapshot?.documents.length || 0, updatedAt: snapshot?.updatedAt, sha: snapshot?.sha?.slice(0, 8), branch: snapshot?.branch, ...status };
     });
   }
   const server = http.createServer(async (req, res) => {
@@ -123,7 +124,7 @@ async function serve() {
             const next = { ...config, repos: previous ? config.repos.map(r => r.id === previous.id ? repo : r) : [...config.repos, repo] };
             if (next.repos.length > 100) return send(400, { error: '最多配置 100 个仓库' });
             await atomicJson(configFile, next); config = next;
-            if (previous && previous.url !== repo.url) store.forget(previous.id);
+            if (previous && previous.url !== repo.url) await store.purge(previous.id);
             store.catalogs.delete(repo.id);
             void store.sync(repo); return send(200, { ok: true });
           } finally { editing = false; }
@@ -133,7 +134,7 @@ async function serve() {
           try {
             const next = { ...config, repos: config.repos.filter(r => r.id !== body.id) };
             await atomicJson(configFile, next); config = next;
-            store.forget(body.id);
+            await store.purge(body.id);
             return send(200, { ok: true });
           } finally { editing = false; }
         }
@@ -192,7 +193,7 @@ async function serve() {
         if (ext === '.pdf') res.setHeader('Content-Disposition', 'attachment');
         res.writeHead(200, { 'Content-Type': mime }); res.end(await fs.readFile(path.join(snapshot.root, 'files', ...file.split('/')))); return;
       }
-      const staticFiles = { '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
+      const staticFiles = { '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.ico': ['favicon.svg', 'image/svg+xml'] };
       const staticFile = staticFiles[route];
       if (staticFile) { res.writeHead(200, { 'Content-Type': staticFile[1] + '; charset=utf-8' }); return res.end(await fs.readFile(path.join(home, 'public', staticFile[0]))); }
       if (route === '/' || route === '/admin' || /^\/repo\/[a-f0-9-]{36}$/.test(route)) {
@@ -220,6 +221,6 @@ async function main() { try {
     const password = randomBytes(18).toString('base64url');
     config.adminHash = digest(password); await atomicJson(configFile, config);
     console.log(`新管理密码：${password}\n请重启服务后使用。`);
-  } else throw new Error('用法：app.cjs init | serve | reset-password');
+  } else throw new Error('用法：init | serve | reset-password');
 } catch (e) { console.error(e.code === 'EADDRINUSE' ? '端口已占用，请先停止旧服务或修改 data/config.json 中的 port' : e.message); process.exitCode = 1; } }
 void main();

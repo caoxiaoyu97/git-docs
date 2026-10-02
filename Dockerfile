@@ -8,12 +8,14 @@ COPY src/ ./src/
 COPY public/ ./public/
 COPY test/ ./test/
 COPY scripts/licenses.mjs ./scripts/licenses.mjs
+COPY scripts/build.mjs ./scripts/build.mjs
 RUN npm run build && npm test && node scripts/licenses.mjs
 
 FROM ${RUNTIME_IMAGE}
+ARG APP_VERSION=0.0.0
 LABEL org.opencontainers.image.title="Git Docs" \
       org.opencontainers.image.description="GitLab GitHub Gitee Markdown portal with external data directory" \
-      org.opencontainers.image.version="1.1.0"
+      org.opencontainers.image.version="${APP_VERSION}"
 WORKDIR /app
 ENV NODE_ENV=production GIT_DOCS_HOME=/app GIT_DOCS_DATA=/data
 COPY --from=build /build/dist/app.cjs ./app.cjs

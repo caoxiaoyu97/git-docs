@@ -10,5 +10,6 @@
 !test/**
 !scripts/
 !scripts/licenses.mjs
+!scripts/build.mjs
 !docker/
 !docker/entry.cjs

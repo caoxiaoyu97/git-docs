@@ -36,7 +36,7 @@ try {
   }
   for (const [i, arch] of ['amd64', 'arm64'].entries()) {
     console.log(`\n构建 linux/${arch}：${tags[i]}\n`);
-    await docker(['build', '--platform', `linux/${arch}`, '--build-arg', `BUILD_IMAGE=git-docs-node-base:24-${hostArch}`, '--build-arg', `RUNTIME_IMAGE=git-docs-node-base:24-${arch}`, '--tag', tags[i], '.']);
+    await docker(['build', '--platform', `linux/${arch}`, '--build-arg', `BUILD_IMAGE=git-docs-node-base:24-${hostArch}`, '--build-arg', `RUNTIME_IMAGE=git-docs-node-base:24-${arch}`, '--build-arg', `APP_VERSION=${pkg.version}`, '--tag', tags[i], '.']);
   }
   const raw = path.join(release, 'git-docs-images.tar');
   const output = path.join(release, 'git-docs-images.tar.gz');

@@ -17,6 +17,11 @@ export class BranchStore extends Store {
   defaultBranch(repo) { return repo.branch || this.defaults.get(repo.id) || this.snapshots.get(repo.id)?.branch; }
   snapshot(repo, branch) { return branch ? this.channels.get(repo.id)?.get(branch)?.snapshots.get(repo.id) : this.snapshots.get(repo.id); }
   state(repo, branch) { return this.channels.get(repo.id)?.get(branch)?.statuses.get(repo.id) || {}; }
+  defaultStatus(repo) {
+    const branch = this.defaultBranch(repo);
+    const live = branch ? this.state(repo, branch) : null;
+    return live && Object.keys(live).length ? live : (this.statuses.get(repo.id) || {});
+  }
   busy(id) { return this.cleaning.has(id) || [...this.jobs.keys()].some(k => k.startsWith(id + '\0')); }
   async load(repo) {
     const meta = await readJson(path.join(this.repoDir(repo.id), 'branch-default.json'));
@@ -135,4 +140,17 @@ export class BranchStore extends Store {
     } finally { this.cleaning.delete(repo.id); }
   }
   forget(id) { this.channels.delete(id); this.defaults.delete(id); this.catalogs.delete(id); this.snapshots.delete(id); this.statuses.delete(id); }
+  async purge(id) {
+    if (!/^[a-f0-9-]{36}$/.test(id)) return;
+    this.forget(id);
+    await fs.rm(this.repoDir(id), { recursive: true, force: true }).catch(() => {});
+  }
+  async prune(validIds) {
+    const keep = new Set([...validIds].filter(id => /^[a-f0-9-]{36}$/.test(id)));
+    const root = path.join(this.directory, 'repos');
+    for (const name of await fs.readdir(root).catch(() => [])) {
+      if (!/^[a-f0-9-]{36}$/.test(name) || keep.has(name)) continue;
+      await fs.rm(path.join(root, name), { recursive: true, force: true }).catch(() => {});
+    }
+  }
 }

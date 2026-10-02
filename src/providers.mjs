@@ -3,6 +3,9 @@ import { createGzip } from 'node:zlib';
 import tar from 'tar-stream';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { VERSION } from './version.mjs';
+
+const USER_AGENT = 'Git-Docs/' + VERSION;
 let giteeNextAt = 0;
 let giteeGate = Promise.resolve();
 
@@ -24,7 +27,7 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
   const root = type === 'gitlab'
     ? `${repo.gitlabBase || base}/api/v4/projects/${encodeURIComponent(repo.project)}`
     : `${type === 'github' ? 'https://api.github.com' : 'https://gitee.com/api/v5'}/repos/${repo.project.split('/').map(encodeURIComponent).join('/')}`;
-  const headers = { 'User-Agent': 'Git-Docs/1.1.0' };
+  const headers = { 'User-Agent': USER_AGENT };
   if (repo.token) headers[type === 'gitlab' ? 'PRIVATE-TOKEN' : 'Authorization'] = type === 'gitlab' ? repo.token : `Bearer ${repo.token}`;
   if (type === 'github') { headers.Accept = 'application/vnd.github+json'; headers['X-GitHub-Api-Version'] = '2022-11-28'; }
 
@@ -49,7 +52,7 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
         const host = next.hostname.toLowerCase();
         const trusted = type === 'github' ? host === 'codeload.github.com' : type === 'gitee' ? /(^|\.)(gitee\.com|gitee\.cn|giteeusercontent\.com)$/.test(host) : false;
         if (next.username || next.password || !['http:', 'https:'].includes(next.protocol) || (url.protocol === 'https:' && next.protocol !== 'https:') || (next.origin !== url.origin && !(next.protocol === 'https:' && trusted))) throw new Error(`${label} 下载跳转到非预期地址，已停止`);
-        if (next.origin !== url.origin) currentHeaders = { 'User-Agent': 'Git-Docs/1.1.0' };
+        if (next.origin !== url.origin) currentHeaders = { 'User-Agent': USER_AGENT };
         url = next; continue;
       }
       if (!response.ok) {
