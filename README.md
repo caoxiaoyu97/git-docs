@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.7.5-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.7.5-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.7.6-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.7.6-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -145,6 +145,11 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 图表在浏览器本地渲染，脚本来自服务自身的 /vendor/mermaid，不依赖外网 CDN，而且只在页面真的出现图表时才加载。构建时会把 Mermaid 复制到 dist/vendor/mermaid（已被 gitignore，不属于源码），Docker 镜像里也已包含，因此离线可用。
 
 因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
+
+
+## 1.7.6
+
+修一个打包问题：start.ps1 在生成时被写入了两个 BOM，Windows PowerShell 只吃掉第一个，第二个和开头的注释连在一起被当成命令，于是双击后第一行会报一次「无法将 # 项识别为 cmdlet」。向导本身能继续跑，但会显示一段红字。现在生成时会先去掉已有的 BOM 再补一个。
 
 
 ## 1.7.5

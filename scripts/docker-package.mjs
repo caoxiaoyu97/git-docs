@@ -52,7 +52,8 @@ try {
     // .bat 必须是 CRLF，否则 cmd 会把命令解析错。
     if (name.endsWith('.bat')) content = content.replace(/\r?\n/g, '\r\n');
     // .ps1 带 BOM，Windows PowerShell 才会按 UTF-8 读取其中的中文。
-    const output = name.endsWith('.ps1') ? '\uFEFF' + content : content;
+    // 源码里通常已经有一个，先去掉再补，避免出现两个 BOM 让第一行解析失败。
+    const output = name.endsWith('.ps1') ? '\uFEFF' + content.replace(/^\uFEFF/, '') : content;
     await fs.writeFile(path.join(release, name), output, { mode: 0o755 });
   }
   await fs.copyFile(path.join(root, '3-部署说明.md'), path.join(release, '3-部署说明.md'));
