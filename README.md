@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.6.0-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.6.0-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.7.0-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.7.0-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -145,6 +145,17 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 图表在浏览器本地渲染，脚本来自服务自身的 /vendor/mermaid，不依赖外网 CDN，而且只在页面真的出现图表时才加载。构建时会把 Mermaid 复制到 dist/vendor/mermaid（已被 gitignore，不属于源码），Docker 镜像里也已包含，因此离线可用。
 
 因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
+
+
+## 1.7.0 阅读体验与性能
+
+阅读页新增深色模式（页头可切换，默认跟随系统）、面包屑、上一篇/下一篇（顺序与侧栏目录一致）、点击图片放大，以及“复制原文”一键复制当前文档的原始 Markdown。
+
+新增 Mermaid 图表：代码块语言写 mermaid 就会渲染成图，适合画模块依赖和调用时序；图表在浏览器本地渲染，脚本来自服务自身，不依赖外网 CDN，而且只在页面真的出现图表时才加载。
+
+性能方面：文本响应启用 Brotli/gzip 压缩，5612 篇文档的列表从 743KB 降到 150KB；文档图片改为流式返回并带 ETag 和长缓存，不再每次切文档重下；搜索复用了大小写索引，5612 篇的搜索从约 150ms 降到约 60ms。
+
+新增“推送即同步”的 webhook：在 Git 平台配置一条地址即可，push 后几秒内更新。
 
 
 ## 1.6.0 面向 AI 的接入与版本统一
