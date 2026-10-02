@@ -8,6 +8,55 @@ import { Store, atomicJson, readJson, repoConfig, digest, verifySecret, renderMa
 import { BranchStore } from './branches.mjs';
 import { sourceUrl } from './providers.mjs';
 import { createAi } from './ai/index.mjs';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { gzipSync, brotliCompressSync, constants as zlibConstants } from 'node:zlib';
+
+const compressionCache = new Map();
+function pickEncoding(req) {
+  const header = String(req.headers['accept-encoding'] || '');
+  if (/(^|[ ,])br([ ,;]|$)/.test(header)) return 'br';
+  if (/(^|[ ,])gzip([ ,;]|$)/.test(header)) return 'gzip';
+  return null;
+}
+function compressBody(body, encoding) {
+  if (encoding === 'br') return brotliCompressSync(body, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } });
+  return gzipSync(body, { level: 6 });
+}
+function sendBody(req, res, status, contentType, body, extra) {
+  const headers = Object.assign({ 'Content-Type': contentType, Vary: 'Accept-Encoding' }, extra || {});
+  let out = body;
+  const encoding = body.length >= 1024 ? pickEncoding(req) : null;
+  if (encoding) { out = compressBody(body, encoding); headers['Content-Encoding'] = encoding; }
+  headers['Content-Length'] = String(out.length);
+  res.writeHead(status, headers);
+  res.end(out);
+}
+async function sendFile(req, res, file, contentType, cacheControl) {
+  let body;
+  try { body = await fs.readFile(file); }
+  catch { return sendBody(req, res, 404, 'application/json; charset=utf-8', Buffer.from('{"error":"资源不存在"}')); }
+  const headers = { Vary: 'Accept-Encoding', 'Cache-Control': cacheControl || 'no-store' };
+  let out = body;
+  const encoding = body.length >= 1024 ? pickEncoding(req) : null;
+  if (encoding) {
+    const key = file + '|' + encoding;
+    let cached = compressionCache.get(key);
+    if (!cached) {
+      cached = compressBody(body, encoding);
+      compressionCache.set(key, cached);
+      if (compressionCache.size > 400) compressionCache.delete(compressionCache.keys().next().value);
+    }
+    out = cached;
+    headers['Content-Encoding'] = encoding;
+  }
+  headers['Content-Length'] = String(out.length);
+  res.writeHead(200, Object.assign({ 'Content-Type': contentType }, headers));
+  res.end(out);
+}
+function weakEtag(stat) {
+  return '"' + stat.size.toString(16) + '-' + Math.round(stat.mtimeMs).toString(16) + '"';
+}
 
 const home = path.resolve(process.env.GIT_DOCS_HOME || process.cwd());
 const data = path.resolve(process.env.GIT_DOCS_DATA || path.join(home, 'dist', 'data'));
@@ -73,7 +122,7 @@ async function serve() {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
-    const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
+    const send = (status, value) => sendBody(req, res, status, 'application/json; charset=utf-8', Buffer.from(JSON.stringify(value)));
     try {
       const u = new URL(req.url, 'http://local'); const route = u.pathname;
       if (await ai.handle(req, res, u)) return;
@@ -187,34 +236,42 @@ async function serve() {
       }
       const asset = /^\/asset\/([a-f0-9-]{36})\/(.+)$/.exec(route);
       if (asset) {
-        if (!config.repos.some(r => r.id === asset[1])) return send(404, { error: '仓库不存在' });
-        const file = decodeURIComponent(asset[2]); const snapshot = store.snapshot(config.repos.find(r => r.id === asset[1]), u.searchParams.get('branch'));
+        const repo = config.repos.find(r => r.id === asset[1]);
+        if (!repo) return send(404, { error: '仓库不存在' });
+        const file = decodeURIComponent(asset[2]); const snapshot = store.snapshot(repo, u.searchParams.get('branch'));
         if (!validRelative(file) || !snapshot?.files.includes(file) || !ASSETS.has(path.extname(file).toLowerCase())) return send(404, { error: '资源不存在' });
         const ext = path.extname(file).toLowerCase();
         const mime = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.pdf': 'application/pdf' }[ext];
+        const target = path.join(snapshot.root, 'files', ...file.split('/'));
+        let stat;
+        try { stat = await fs.stat(target); } catch { return send(404, { error: '资源不存在' }); }
+        const etag = weakEtag(stat);
         res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
         if (ext === '.pdf') res.setHeader('Content-Disposition', 'attachment');
-        res.writeHead(200, { 'Content-Type': mime }); res.end(await fs.readFile(path.join(snapshot.root, 'files', ...file.split('/')))); return;
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', u.searchParams.get('v') ? 'public, max-age=604800, immutable' : 'public, max-age=300');
+        if (req.headers['if-none-match'] === etag) { res.writeHead(304); return res.end(); }
+        res.writeHead(200, { 'Content-Type': mime, 'Content-Length': String(stat.size) });
+        if (req.method === 'HEAD') return res.end();
+        await pipeline(createReadStream(target), res);
+        return;
       }
       if (route.startsWith('/vendor/')) {
         const relative = route.slice('/vendor/'.length);
         if (!validRelative(relative)) return send(404, { error: '资源不存在' });
-        try {
-          const body = await fs.readFile(path.join(home, 'dist', 'vendor', ...relative.split('/')));
-          const ext = path.extname(relative).toLowerCase();
-          const mime = ext === '.mjs' || ext === '.js' ? 'text/javascript' : ext === '.css' ? 'text/css' : 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': mime + (mime.startsWith('text/') ? '; charset=utf-8' : ''), 'Cache-Control': 'public, max-age=86400' });
-          return res.end(body);
-        } catch { return send(404, { error: '资源不存在' }); }
+        const ext = path.extname(relative).toLowerCase();
+        const mime = ext === '.mjs' || ext === '.js' ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : 'application/octet-stream';
+        const hashed = /-[A-Z0-9]{8}\.(mjs|js|css)$/.test(relative);
+        return sendFile(req, res, path.join(home, 'dist', 'vendor', ...relative.split('/')), mime, hashed ? 'public, max-age=604800, immutable' : 'no-cache');
       }
       const staticFiles = { '/app.js': ['app.js', 'text/javascript'], '/ai.js': ['ai.js', 'text/javascript'], '/theme.js': ['theme.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.ico': ['favicon.svg', 'image/svg+xml'] };
       const staticFile = staticFiles[route];
-      if (staticFile) { res.writeHead(200, { 'Content-Type': staticFile[1] + '; charset=utf-8' }); return res.end(await fs.readFile(path.join(home, 'public', staticFile[0]))); }
+      if (staticFile) return sendFile(req, res, path.join(home, 'public', staticFile[0]), staticFile[1] + '; charset=utf-8', 'no-store');
       if (route === '/ai') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(await fs.readFile(path.join(home, 'public', 'ai.html')));
+        return sendFile(req, res, path.join(home, 'public', 'ai.html'), 'text/html; charset=utf-8', 'no-store');
       }
       if (route === '/' || route === '/admin' || /^\/repo\/[a-f0-9-]{36}$/.test(route)) {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(await fs.readFile(path.join(home, 'public', 'index.html')));
+        return sendFile(req, res, path.join(home, 'public', 'index.html'), 'text/html; charset=utf-8', 'no-store');
       }
       return send(404, { error: '页面不存在' });
     } catch (e) {
