@@ -117,6 +117,22 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 重启会清理没有完成索引的临时版本。磁盘空间不足时保留最后成功文档。修改仓库地址会创建独立的新存储身份，避免旧仓库文档串入新地址；旧目录保留用于人工恢复，不自动删除。
 
 
+## Mermaid 图表
+
+文档里的代码块语言写 mermaid，阅读页会渲染成图，支持流程图（graph / flowchart）、时序图（sequenceDiagram）、状态图、类图等 Mermaid 支持的图形，适合画模块依赖、调用时序。
+
+模块依赖图示例：
+
+    graph TD
+      app[业务应用] --> auth[auth 权限模块]
+      app --> common[common 公共工具]
+      auth --> common
+
+图表在浏览器本地渲染，脚本来自服务自身的 /vendor/mermaid，不依赖外网 CDN，而且只在页面真的出现图表时才加载。构建时会把 Mermaid 复制到 dist/vendor/mermaid（已被 gitignore，不属于源码），Docker 镜像里也已包含，因此离线可用。
+
+因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
+
+
 ## 1.6.0 面向 AI 的接入与版本统一
 
 新增独立 AI 模块（src/ai），复用同一份已同步文档：只读，不写数据目录，不读取或返回仓库 Token。提供单篇原始 Markdown 接口 /raw、文档索引 /llms.txt，以及 MCP 端点 /mcp，内置 list_repos、list_branches、list_docs、search_docs、get_doc 五个工具，供业务组的 AI 参考框架文档进行开发。默认不校验令牌；设置 GIT_DOCS_AI_TOKEN 后，三个端点都需要 Bearer 令牌并校验 Origin。
