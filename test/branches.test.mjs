@@ -5,9 +5,10 @@ import path from 'node:path';
 import { BranchStore } from '../src/branches.mjs';
 import { Store, repoConfig, renderMarkdown } from '../src/core.mjs';
 import { archive } from './mock.mjs';
+import { temporary } from './temporary.mjs';
 
 test('branches isolate content/assets, coalesce concurrent clicks, bound downloads and survive restart', async () => {
- const dir = await fs.mkdtemp(path.join(process.cwd(), '.test-branches-'));
+ const dir = await temporary('branches-');
  const names = ['main','release/中文','dev','test']; const counts = new Map(); let active=0,max=0;
  const fake = async input => {
    const u=new URL(input); const route=decodeURIComponent(u.pathname);
@@ -37,7 +38,7 @@ test('branches isolate content/assets, coalesce concurrent clicks, bound downloa
 });
 
 test('failed updates preserve cache, cleanup is guarded, and interrupted staging is recovered', async () => {
- const dir=await fs.mkdtemp(path.join(process.cwd(),'.test-recovery-'));
+ const dir=await temporary('recovery-');
  let sha='a'.repeat(40), deny=false, hold, start;
  const fake=async input=>{
    const u=new URL(input);
@@ -63,7 +64,7 @@ test('failed updates preserve cache, cleanup is guarded, and interrupted staging
 });
 
 test('disk-full during publication retains the previous readable snapshot', async () => {
- const dir=await fs.mkdtemp(path.join(process.cwd(),'.test-disk-'));let sha='a'.repeat(40);
+ const dir=await temporary('disk-');let sha='a'.repeat(40);
  const fake=async input=>new URL(input).pathname.endsWith('/archive.tar.gz') ? new Response(await archive([{name:'root/README.md',body:'# '+sha}])) : Response.json(new URL(input).pathname.includes('/branches/')?{commit:{id:sha}}:{default_branch:'main'});
  const repo=repoConfig({url:'https://example.com/team/repo'}),store=new BranchStore(dir,fake);await store.sync(repo);const old=store.snapshot(repo,'main');sha='b'.repeat(40);
  const original=fs.writeFile;fs.writeFile=async(file,...args)=>{if(String(file).includes('current.json.')){const e=new Error('disk full');e.code='ENOSPC';throw e;}return original(file,...args);};

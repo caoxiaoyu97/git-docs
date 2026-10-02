@@ -87,7 +87,11 @@ export class BranchStore extends Store {
     }
     let remote, error;
     try { remote = await c.promise; } catch(e) { error = repo.token ? e.message.replaceAll(repo.token, '[已隐藏]') : e.message; remote = { names: [], defaultBranch: this.defaultBranch(repo) }; }
-    if (remote.defaultBranch) { this.defaults.set(repo.id, remote.defaultBranch); await atomicJson(path.join(this.repoDir(repo.id), 'branch-default.json'), { branch: remote.defaultBranch }); }
+    if (remote.defaultBranch) {
+      this.defaults.set(repo.id, remote.defaultBranch);
+      c.saveDefault ??= atomicJson(path.join(this.repoDir(repo.id), 'branch-default.json'), { branch: remote.defaultBranch }).catch(e => { c.saveDefault = null; throw e; });
+      await c.saveDefault;
+    }
     const names = new Set([...remote.names, ...(this.channels.get(repo.id)?.keys() || []), ...(this.defaultBranch(repo) ? [this.defaultBranch(repo)] : [])]);
     return { defaultBranch: this.defaultBranch(repo), error, branches: [...names].sort((a,b)=>a.localeCompare(b, 'zh-CN', { numeric:true })).map(name => { const snap = this.snapshot(repo,name), state = this.state(repo,name); return { name, remoteDeleted: !error && !remote.names.includes(name), synced: Boolean(snap), count: snap?.documents.length || 0, updatedAt: snap?.updatedAt, ...state }; }) };
   }

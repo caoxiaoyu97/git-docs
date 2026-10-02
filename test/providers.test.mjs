@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { Store, repoConfig } from '../src/core.mjs';
 import { createProvider, sourceUrl } from '../src/providers.mjs';
 import { archive } from './mock.mjs';
+import { temporary } from './temporary.mjs';
 
 test('platform is inferred from URL and public repositories do not require a token', () => {
   for (const [url, provider] of [['https://github.com/team/project.git', 'github'], ['https://gitee.com/team/project', 'gitee'], ['http://gitlab.company/team/project', 'gitlab']]) {
@@ -26,7 +25,7 @@ for (const type of ['github', 'gitee']) test(`${type}: authenticated sync, pinne
     }
     return Response.json(url.includes('/branches/') ? { commit: { sha } } : { default_branch: 'main' });
   };
-  const dir = await fs.mkdtemp(path.join(process.cwd(), '.test-'));
+  const dir = await temporary();
   const store = new Store(dir, fetchMock); await store.sync(repo);
   assert.equal(store.snapshots.get(repo.id)?.documents[0].title, '内容', JSON.stringify(store.statuses.get(repo.id)));
   assert.equal(calls.filter(c => c.url.includes('/tarball')).length, 1);
@@ -51,7 +50,7 @@ test('editing repository host does not silently forward the previous token', () 
 });
 test('Gitee without token reads public tree/blobs; supplied invalid token never falls back', async () => {
   const repo = repoConfig({ url: 'https://gitee.com/team/public' });
-  const dir = await fs.mkdtemp(path.join(process.cwd(), '.test-'));
+  const dir = await temporary();
   const calls = [];
   const fetchMock = async (url, options) => {
     calls.push(url); assert.equal(options.headers.Authorization, undefined);
@@ -68,7 +67,7 @@ test('Gitee without token reads public tree/blobs; supplied invalid token never 
 });
 test('Gitee anonymous retry reuses downloaded blobs after rate limiting', async () => {
   const repo = repoConfig({ url: 'https://gitee.com/team/public' });
-  const dir = await fs.mkdtemp(path.join(process.cwd(), '.test-'));
+  const dir = await temporary();
   let fail = true; const blobs = [];
   const mock = async url => {
     if (url.includes('/git/trees/')) return Response.json({ tree: ['b', 'c'].map(c => ({ path: c + '.md', mode: '100644', type: 'blob', sha: c.repeat(40), size: 4 })) });

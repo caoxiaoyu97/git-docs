@@ -9,7 +9,7 @@ import { BranchStore } from './branches.mjs';
 import { sourceUrl } from './providers.mjs';
 
 const home = path.resolve(process.env.GIT_DOCS_HOME || process.cwd());
-const data = path.resolve(process.env.GIT_DOCS_DATA || path.join(home, 'data'));
+const data = path.resolve(process.env.GIT_DOCS_DATA || path.join(home, 'dist', 'data'));
 const configFile = path.join(data, 'config.json');
 const command = process.argv[2] || 'serve';
 process.umask(0o077);

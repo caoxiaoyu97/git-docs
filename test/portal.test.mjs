@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { extractDocs, repoConfig, Store, renderMarkdown, atomicJson, digest } from '../src/core.mjs';
 import { archive, mockGitLab } from './mock.mjs';
-const temporary = () => fs.mkdtemp(path.join(process.cwd(), '.test-'));
+import { temporary } from './temporary.mjs';
 
 test('interactive init creates configuration without printing the supplied password', async () => {
   const dir = await temporary();
@@ -91,7 +91,8 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   assert.equal(branches.branches.find(b=>b.name==='main').synced, true);
   const endpoint = base + `/api/repo/${repo.id}/branch-sync?branch=dev`;
   const repeated = await Promise.all(Array.from({length:8},()=>fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})));
-  assert.ok(repeated.every(r=>r.status===202));
+  const replies = await Promise.all(repeated.map(async r => ({ status: r.status, body: await r.json() })));
+  assert.ok(replies.every(r=>r.status===202), JSON.stringify(replies));
   let status; for(let i=0;i<50;i++){status=await(await fetch(base+`/api/repo/${repo.id}/branch-status?branch=dev`)).json();if(status.synced)break;await new Promise(r=>setTimeout(r,30));}
   assert.equal(status.synced,true);assert.equal(mock.state.downloads,2);
   const branchDoc=await(await fetch(base+`/api/repo/${repo.id}/doc?branch=dev&path=README.md`)).json();assert.match(branchDoc.source,/\/dev\//);assert.match(branchDoc.html,/branch=dev/);

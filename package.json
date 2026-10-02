@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "init": "node src/main.mjs init",
     "start": "node src/main.mjs",
     "test": "node --test test/*.test.mjs",
     "build": "esbuild src/main.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=dist/app.cjs",

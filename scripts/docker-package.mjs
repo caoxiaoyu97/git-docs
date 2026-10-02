@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-const release = path.join(root, 'release');
+const release = path.join(root, 'dist', 'release');
 const tags = ['amd64', 'arm64'].map(arch => `git-docs:${pkg.version}-${arch}`);
 async function docker(args) {
   await new Promise((resolve, reject) => {

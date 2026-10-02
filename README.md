@@ -13,7 +13,7 @@ npm run docker:package
 命令在 Docker 构建阶段安装锁定依赖、运行测试、打包应用，并依次构建 amd64 和 arm64 两个原生镜像，最后导出到：
 
 ```text
-release/
+dist/release/
 ├── git-docs-images.tar.gz
 └── git-docs-images.tar.gz.sha256
 ```
@@ -33,9 +33,13 @@ release/
 npm ci
 npm run build
 npm test
-node dist/app.cjs init
+npm run init
 npm start
 ```
+
+本地初始化和运行默认使用 `dist/data/`，可通过 `GIT_DOCS_DATA` 指定其他目录。测试临时文件放在 `dist/test/`，测试结束自动清理；镜像包输出到 `dist/release/`。`test/` 保存测试源码。
+
+`dist/` 内含本地初始化配置和缓存，清理构建结果时不要删除整个目录；重新构建只更新程序文件。Docker 仍使用外部挂载的 `/data`。
 
 源码目录：
 
