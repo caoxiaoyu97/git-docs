@@ -1,22 +1,12 @@
 // AI 模块的只读数据视图：复用主服务已同步的快照，不写入、不联网。
+import { loweredDocuments } from '../core.mjs';
+
 export class AiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-// 关键字搜索需要小写全文；按快照对象缓存，换版本后自动失效。
-const loweredCache = new WeakMap();
-
 function titleForLink(value) {
   return String(value).replace(/[[\]]/g, ch => '\\' + ch);
-}
-
-function lowered(snapshot) {
-  let entry = loweredCache.get(snapshot);
-  if (!entry) {
-    entry = snapshot.documents.map(doc => ({ doc, title: doc.title.toLowerCase(), path: doc.path.toLowerCase(), text: doc.text.toLowerCase() }));
-    loweredCache.set(snapshot, entry);
-  }
-  return entry;
 }
 
 export function createDataset({ getConfig, store }) {
@@ -122,7 +112,7 @@ export function createDataset({ getConfig, store }) {
     const snapshot = snapshotFor(repo, branch);
     const max = Math.min(Math.max(Number(limit) || 50, 1), 200);
     const matches = [];
-    for (const entry of lowered(snapshot)) {
+    for (const entry of loweredDocuments(snapshot)) {
       const position = entry.text.indexOf(keyword);
       const inTitle = entry.title.includes(keyword);
       const inPath = entry.path.includes(keyword);

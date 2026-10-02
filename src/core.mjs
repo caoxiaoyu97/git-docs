@@ -15,6 +15,17 @@ export const ASSETS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
 const SKIP = new Set(['.git', 'target', 'node_modules', '.idea', '.gradle']);
 const LIMIT = 256 * 1024 * 1024;
 export const digest = s => createHash('sha256').update(s).digest('hex');
+
+// 关键字搜索需要小写全文；按快照对象缓存，换版本后自动失效。
+const lowercaseIndex = new WeakMap();
+export function loweredDocuments(snapshot) {
+  let entry = lowercaseIndex.get(snapshot);
+  if (!entry) {
+    entry = snapshot.documents.map(doc => ({ doc, title: doc.title.toLowerCase(), path: doc.path.toLowerCase(), text: doc.text.toLowerCase() }));
+    lowercaseIndex.set(snapshot, entry);
+  }
+  return entry;
+}
 export function verifySecret(value, hash) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/.test(hash || '') && timingSafeEqual(Buffer.from(digest(value), 'hex'), Buffer.from(hash, 'hex'));
 }

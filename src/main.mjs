@@ -4,7 +4,7 @@ import http from 'node:http';
 import readline from 'node:readline';
 import { Writable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
-import { Store, atomicJson, readJson, repoConfig, digest, verifySecret, renderMarkdown, ASSETS, validRelative } from './core.mjs';
+import { Store, atomicJson, readJson, repoConfig, digest, verifySecret, renderMarkdown, ASSETS, validRelative, loweredDocuments } from './core.mjs';
 import { BranchStore } from './branches.mjs';
 import { sourceUrl } from './providers.mjs';
 import { createAi } from './ai/index.mjs';
@@ -227,9 +227,12 @@ async function serve() {
         if (apiMatch[2] === 'docs') return send(200, { name: repo.name, documents: snapshot.documents.map(({ text, ...d }) => d), updatedAt: snapshot.updatedAt, branch: snapshot.branch });
         if (apiMatch[2] === 'search') {
           const q = (u.searchParams.get('q') || '').trim().toLowerCase().slice(0, 200);
-          const results = q ? snapshot.documents.filter(d => (d.title + '\n' + d.path + '\n' + d.text).toLowerCase().includes(q)).sort((a,b) => { const score = d => (d.title.toLowerCase() === q ? 100 : d.title.toLowerCase().includes(q) ? 50 : 0) + (d.path.toLowerCase().includes(q) ? 20 : 0); return score(b) - score(a) || a.path.localeCompare(b.path, 'zh-CN', {numeric:true}); }).slice(0, 100).map(d => {
-            const pos = d.text.toLowerCase().indexOf(q);
-            return { path: d.path, title: d.title, snippet: d.text.slice(Math.max(0, pos - 40), Math.max(0, pos - 40) + 180) };
+          const results = q ? loweredDocuments(snapshot).filter(entry => entry.title.includes(q) || entry.path.includes(q) || entry.text.includes(q)).sort((a, b) => {
+            const score = entry => (entry.title === q ? 100 : entry.title.includes(q) ? 50 : 0) + (entry.path.includes(q) ? 20 : 0);
+            return score(b) - score(a) || a.doc.path.localeCompare(b.doc.path, 'zh-CN', { numeric: true });
+          }).slice(0, 100).map(entry => {
+            const pos = entry.text.indexOf(q);
+            return { path: entry.doc.path, title: entry.doc.title, snippet: entry.doc.text.slice(Math.max(0, pos - 40), Math.max(0, pos - 40) + 180) };
           }) : [];
           return send(200, { results });
         }
