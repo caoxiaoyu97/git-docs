@@ -17,7 +17,15 @@ LABEL org.opencontainers.image.title="Git Docs" \
       org.opencontainers.image.description="GitLab GitHub Gitee Markdown portal with external data directory" \
       org.opencontainers.image.version="${APP_VERSION}"
 WORKDIR /app
-ENV NODE_ENV=production GIT_DOCS_HOME=/app GIT_DOCS_DATA=/data
+# 全部配置都有默认值，直接运行即可。下面这些只在需要时修改，
+# 声明出来是为了让启动界面能列出可配置项。
+ENV NODE_ENV=production \
+    GIT_DOCS_HOME=/app \
+    GIT_DOCS_DATA=/data \
+    GIT_DOCS_INTERVAL_MINUTES=10 \
+    GIT_DOCS_ADMIN_PASSWORD= \
+    GIT_DOCS_AI_TOKEN= \
+    GIT_DOCS_HOOK_TOKEN=
 COPY --from=build /build/dist/app.cjs ./app.cjs
 COPY --from=build /build/dist/licenses/ ./licenses/
 COPY --from=build /build/dist/vendor/ ./dist/vendor/
