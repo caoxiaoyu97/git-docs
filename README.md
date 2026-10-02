@@ -64,6 +64,21 @@ test/                      模拟 GitLab 与自动化测试
 
 打包不会包含本地 data、Token、文档缓存或镜像归档；`.dockerignore` 使用白名单。版本号只需修改 `package.json`：镜像标签、镜像内的版本标签和请求 User-Agent 都由它自动生成，发布时再同步 3-部署说明.md 里的示例标签即可。
 
+## 给 AI 使用（MCP 与原始 Markdown）
+
+服务内置一个面向 AI 的独立模块，复用同一份已同步的文档，不额外占用存储，也不影响阅读页面。主服务只把匹配到的路由转发给它。
+
+- POST /mcp：MCP 端点，提供 list_repos、list_branches、list_docs、search_docs、get_doc 五个工具，其中 get_doc 返回原始 Markdown。
+- GET /raw?repo=&branch=&path=：直接返回单篇文档的原始 Markdown（text/markdown）。
+- GET /llms.txt：文档索引；加 ?repo=仓库ID 可列出该仓库全部文档的链接。
+
+支持远程 MCP 的 AI 客户端接入示例：
+
+    claude mcp add --transport http git-docs http://服务器地址:端口/mcp
+    codex mcp add git-docs --url http://服务器地址:端口/mcp
+
+只读保证：该模块只读取已同步的快照，不写入数据目录，也不会读取或返回仓库 Token。默认不校验令牌，与阅读接口一致；若要把端口暴露到更大范围，设置环境变量 GIT_DOCS_AI_TOKEN 后，以上三个端点都必须带 Authorization: Bearer 令牌。
+
 ## 平台识别与访问权限
 
 根据地址识别 github.com、gitee.com，其他普通内网地址按自建 GitLab 处理。GitLab Token 需 read_api；GitHub 私有仓库的细粒度 Token 需 Contents 只读权限；Gitee Token 需 projects 权限。所有平台的 Token 都可留空；填写时优先认证，无效不降级，未填写时匿名读取公开仓库。Gitee 匿名模式通过公开 tree/blob API 读取所选文件，以兼容其归档 API 要求认证的限制；文件多时会受匿名 API 限流约束。三者均还需有对应仓库的访问权限。Token 只发给各自平台的 API；归档跨域跳转不转发 Token。

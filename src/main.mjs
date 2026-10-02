@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { Store, atomicJson, readJson, repoConfig, digest, verifySecret, renderMarkdown, ASSETS, validRelative } from './core.mjs';
 import { BranchStore } from './branches.mjs';
 import { sourceUrl } from './providers.mjs';
+import { createAi } from './ai/index.mjs';
 
 const home = path.resolve(process.env.GIT_DOCS_HOME || process.cwd());
 const data = path.resolve(process.env.GIT_DOCS_DATA || path.join(home, 'dist', 'data'));
@@ -54,6 +55,7 @@ async function serve() {
   const store = new BranchStore(data);
   for (const repo of config.repos) await store.load(repo);
   await store.prune(config.repos.map(r => r.id));
+  const ai = createAi({ getConfig: () => config, store });
   let stopping = false; let ticking = false; let editing = false;
   async function tick() {
     if (ticking || stopping) return; ticking = true;
@@ -74,6 +76,7 @@ async function serve() {
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
       const u = new URL(req.url, 'http://local'); const route = u.pathname;
+      if (await ai.handle(req, res, u)) return;
       if (route.startsWith('/api/admin/')) {
         const secret = String(req.headers.authorization || '').replace(/^Bearer /, '');
         if (!verifySecret(secret, config.adminHash)) return send(401, { error: '管理密码不正确' });
@@ -208,6 +211,7 @@ async function serve() {
   server.requestTimeout = 20000;
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host || '0.0.0.0', resolve); });
   console.log(`Git Docs 已启动：http://localhost:${config.port}  |  每 ${config.intervalMinutes} 分钟同步  |  ${config.repos.length} 个仓库`);
+  console.log('AI 接入：MCP 端点 /mcp  |  原始 Markdown /raw  |  索引 /llms.txt');
   let timer = setInterval(tick, config.intervalMinutes * 60000); void tick();
   const stop = () => { stopping = true; clearInterval(timer); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 5000).unref(); };
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
