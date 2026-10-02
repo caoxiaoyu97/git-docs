@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.5.0-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.5.0-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.6.0-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.6.0-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -115,6 +115,13 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 管理仓库 → 分支缓存：查看文档数量和实际占用空间（包括历史版本与下载缓存），清理非默认分支缓存。统计大仓库可能需要等待。默认展示分支保留；同步或清理期间禁止冲突操作。仅删除本地分支缓存，Git仓库不受影响，下次访问重新同步。
 
 重启会清理没有完成索引的临时版本。磁盘空间不足时保留最后成功文档。修改仓库地址会创建独立的新存储身份，避免旧仓库文档串入新地址；旧目录保留用于人工恢复，不自动删除。
+
+
+## 1.6.0 面向 AI 的接入与版本统一
+
+新增独立 AI 模块（src/ai），复用同一份已同步文档：只读，不写数据目录，不读取或返回仓库 Token。提供单篇原始 Markdown 接口 /raw、文档索引 /llms.txt，以及 MCP 端点 /mcp，内置 list_repos、list_branches、list_docs、search_docs、get_doc 五个工具，供业务组的 AI 参考框架文档进行开发。默认不校验令牌；设置 GIT_DOCS_AI_TOKEN 后，三个端点都需要 Bearer 令牌并校验 Origin。
+
+版本号改为只在 package.json 维护：镜像标签、镜像内版本标签和请求 User-Agent 都由它生成。新增站点图标 favicon.svg。删除仓库或更换仓库地址时清理旧入口的文档缓存，启动时清理已不在配置中的孤立缓存目录。
 
 
 ## 1.5.0 性能与便捷设置
