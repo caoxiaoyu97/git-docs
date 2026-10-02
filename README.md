@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.7.3-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.7.3-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.7.4-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.7.4-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -147,6 +147,11 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
 
 
+## 1.7.4
+
+去掉镜像里声明但实际没用上的几个可选环境变量：Docker Desktop 的启动对话框并不会因此列出它们，反而让每次构建多出三条警告。功能没有任何变化，可选项照旧通过环境变量或启动脚本传入。
+
+
 ## 1.7.3 启动向导
 
 打包产物里多了两个启动脚本：Linux/macOS 用 start.sh，Windows 双击 start.bat。运行后依次填写数据目录、管理密码、网页端口，脚本就把容器起好然后结束，不需要记任何 docker 命令。
@@ -158,7 +163,7 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 
 不需要任何配置就能跑起来：数据默认放在容器的 /data，管理密码自动生成。首次启动会把密码、数据目录和排查提示直接打印在容器日志里，因此不用翻文档也知道下一步做什么，忘记密码也能用 docker exec 容器名 node entry.cjs reset-password 重置。
 
-镜像里声明了可配置项（同步间隔、AI 令牌、webhook 密码等），Docker Desktop 的启动对话框里端口一行来自镜像的 EXPOSE 声明，卷和环境变量两栏需要自己填——这是 Docker Desktop 的行为，镜像无法预填。不填也能用。
+Docker Desktop 的启动对话框里，端口那一行会从镜像的 EXPOSE 声明自动带上；卷和环境变量两栏需要自己填，Docker Desktop 不会从镜像预填。两栏留空也完全能用，或者直接用交付包里的启动脚本，那两栏都不用管。
 
 
 ## 1.7.1 下载原文
