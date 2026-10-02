@@ -44,8 +44,23 @@ read -r DATA_DIR
 [ -z "$DATA_DIR" ] && DATA_DIR="$DEFAULT_DIR"
 mkdir -p "$DATA_DIR" || exit 1
 
-printf "管理密码（留空自动生成）： "
-read -r PASSWORD
+INITIALIZED=0
+if [ -f "$DATA_DIR/config.json" ]; then
+  INITIALIZED=1
+  echo
+  echo "提示：这个数据目录已经初始化过（之前启动过）。管理密码沿用原来的，"
+  echo "      下面填的密码不会生效；直接回车跳过即可。忘记密码可执行："
+  echo "      docker exec <容器名> node entry.cjs reset-password"
+  echo
+fi
+
+while :; do
+  printf "管理密码（至少 10 位，留空自动生成）： "
+  read -r PASSWORD
+  [ -z "$PASSWORD" ] && break
+  [ ${#PASSWORD} -ge 10 ] && break
+  echo "管理密码至少需要 10 位，请重新输入。"
+done
 
 while :; do
   printf "网页端口 [%s]： " "$PORT"
@@ -74,7 +89,9 @@ echo
 echo "启动完成。"
 echo "网址：http://localhost:$PORT"
 echo "数据目录：$DATA_DIR"
-if [ -z "$PASSWORD" ]; then
+if [ "$INITIALIZED" -eq 1 ]; then
+  echo "管理密码沿用该目录里原来的密码，保存在：$DATA_DIR/admin-password.txt"
+elif [ -z "$PASSWORD" ]; then
   echo "管理密码是自动生成的，保存在：$DATA_DIR/admin-password.txt"
 fi
 echo "停止：docker stop $NAME     再次启动：docker start $NAME"

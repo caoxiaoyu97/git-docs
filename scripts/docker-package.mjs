@@ -46,11 +46,14 @@ try {
   await fs.rename(output + '.tmp', output);
   await fs.unlink(raw);
   // 一并输出启动向导和部署说明，让 release 目录可以直接分发。
-  for (const name of ['start.sh', 'start.bat']) {
+  for (const name of ['start.sh', 'start.bat', 'start.ps1']) {
     const source = await fs.readFile(path.join(root, 'scripts', name), 'utf8');
-    const content = source.replaceAll('__VERSION__', pkg.version);
+    let content = source.replaceAll('__VERSION__', pkg.version);
     // .bat 必须是 CRLF，否则 cmd 会把命令解析错。
-    await fs.writeFile(path.join(release, name), name.endsWith('.bat') ? content.replace(/\r?\n/g, '\r\n') : content, { mode: 0o755 });
+    if (name.endsWith('.bat')) content = content.replace(/\r?\n/g, '\r\n');
+    // .ps1 带 BOM，Windows PowerShell 才会按 UTF-8 读取其中的中文。
+    const output = name.endsWith('.ps1') ? '\uFEFF' + content : content;
+    await fs.writeFile(path.join(release, name), output, { mode: 0o755 });
   }
   await fs.copyFile(path.join(root, '3-部署说明.md'), path.join(release, '3-部署说明.md'));
   const hash = createHash('sha256');
