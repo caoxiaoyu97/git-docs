@@ -8,7 +8,17 @@ async function api(url, body, admin = false) {
   const result = await response.json(); if (!response.ok) throw new Error(result.error || '请求失败'); return result;
 }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.hidden = false; setTimeout(() => el.hidden = true, 3500); }
-function navigate(url) { history.pushState({}, '', url); render(); }
+const sidebarPositions = new Map();
+const searchQueries = new Map();
+let restoring = false;
+history.scrollRestoration = 'manual';
+function savePosition() {
+  history.replaceState({ ...history.state, scrollY: window.scrollY }, '');
+  const side = document.querySelector('.sidebar');
+  if (side) sidebarPositions.set(side.dataset.repo, side.scrollTop);
+}
+window.addEventListener('scroll', () => { if (!restoring) savePosition(); }, { passive: true });
+function navigate(url) { savePosition(); history.pushState({}, '', url); render(); }
 document.addEventListener('click', e => {
   const a = e.target.closest('a'); if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || a.target || a.hasAttribute('download')) return;
   const u = new URL(a.href);
@@ -17,7 +27,7 @@ document.addEventListener('click', e => {
     e.preventDefault(); navigate(u.pathname + u.search + u.hash);
   }
 });
-window.addEventListener('popstate', render);
+window.addEventListener('popstate', () => render(true));
 
 async function home(run) {
   const { repos, intervalMinutes } = await api('/api/repos'); if (run !== generation) return;
@@ -47,18 +57,37 @@ function treeHtml(docs, id, selected) {
   function build(node, parent = "") { return Object.entries(node.dirs).map(([name, sub]) => { const folder = parent ? parent + "/" + name : name; return `<details data-repo="${escape(id)}" data-folder="${escape(folder)}"${openFolders(id).has(folder) ? " open" : ""}><summary>${escape(name)}</summary><div class="tree-nested">${build(sub, folder)}</div></details>`; }).join('') + node.files.map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}<small>${escape(d.path.split('/').at(-1))}</small></a>`).join(''); }
   return build(root);
 }
-async function repository(id, run) {
+async function repository(id, run, restore) {
   const listing = await api(`/api/repo/${id}/docs`); if (run !== generation) return;
   const selected = new URLSearchParams(location.search).get('path') || listing.documents.find(d => /^readme\.md$/i.test(d.path))?.path || listing.documents[0]?.path;
-  app.innerHTML = `<div class="workspace"><aside class="sidebar"><a class="back" href="/">‹ 全部仓库</a><h2>${escape(listing.name)}</h2><label class="search-label" for="search">搜索此仓库</label><input id="search" type="search" placeholder="标题、路径或正文…" autocomplete="off"><div id="tree" class="tree">${treeHtml(listing.documents, id, selected)}</div><div class="side-bottom">${listing.documents.length} 篇文档 · ${escape(listing.branch)}</div></aside><section class="reader"><div id="document">${selected ? '<p class="loading">正在打开文档…</p>' : '<div class="empty"><h2>这个仓库还没有 Markdown 文档</h2><p>提交 .md 文件后会在下次同步时显示。</p></div>'}</div></section></div>`;
+  if (selected) {
+    const parts = selected.split('/').slice(0, -1);
+    for (let i = 1; i <= parts.length; i++) openFolders(id).add(parts.slice(0, i).join('/'));
+  }
+  app.innerHTML = `<div class="workspace"><aside class="sidebar" data-repo="${escape(id)}"><a class="back" href="/">‹ 全部仓库</a><h2>${escape(listing.name)}</h2><label class="search-label" for="search">搜索此仓库</label><input id="search" type="search" placeholder="标题、路径或正文…" autocomplete="off"><div id="tree" class="tree">${treeHtml(listing.documents, id, selected)}</div><div class="side-bottom">${listing.documents.length} 篇文档 · ${escape(listing.branch)}</div></aside><section class="reader"><div id="document">${selected ? '<p class="loading">正在打开文档…</p>' : '<div class="empty"><h2>这个仓库还没有 Markdown 文档</h2><p>提交 .md 文件后会在下次同步时显示。</p></div>'}</div></section></div>`;
+  const side = document.querySelector('.sidebar');
+  side.scrollTop = sidebarPositions.get(id) || 0;
+  function revealSelected() {
+    const active = side.querySelector('.tree-file.selected');
+    if (!active) return;
+    const a = active.getBoundingClientRect(), b = side.getBoundingClientRect();
+    if (a.top < b.top) side.scrollTop += a.top - b.top - 12;
+    else if (a.bottom > b.bottom) side.scrollTop += a.bottom - b.bottom + 12;
+  }
+  revealSelected();
+  side.addEventListener('scroll', () => sidebarPositions.set(id, side.scrollTop), { passive: true });
+  const search = document.querySelector('#search');
+  search.value = searchQueries.get(id) || '';
+  search.addEventListener('focus', () => { if (search.value.trim()) search.dispatchEvent(new Event('input')); });
   let debounce; let searchVersion = 0;
   document.querySelector('#search').addEventListener('input', e => {
-    clearTimeout(debounce); const q = e.target.value.trim(); const seq = ++searchVersion;
+    clearTimeout(debounce); searchQueries.set(id, e.target.value); const q = e.target.value.trim(); const seq = ++searchVersion;
     debounce = setTimeout(async () => {
       try {
         const result = q ? await api(`/api/repo/${id}/search?q=${encodeURIComponent(q)}`) : null;
         if (run !== generation || seq !== searchVersion) return;
         document.querySelector('#tree').innerHTML = result ? `<div class="result-count">${result.results.length} 个结果（最多 100 个）</div>${result.results.map(d => `<a class="search-result" href="${docLink(id, d.path)}"><strong>${escape(d.title)}</strong><small>${escape(d.path)}</small><p>${escape(d.snippet)}</p></a>`).join('') || '<p>没有匹配的文档</p>'}` : treeHtml(listing.documents, id, selected);
+        if (!result) revealSelected();
       } catch (e) { toast(e.message); }
     }, 220);
   });
@@ -66,7 +95,9 @@ async function repository(id, run) {
   const doc = await api(`/api/repo/${id}/doc?path=${encodeURIComponent(selected)}`); if (run !== generation) return;
   document.title = `${doc.title} · ${listing.name} · Git Docs`;
   document.querySelector('#document').innerHTML = `<div class="doc-meta"><span>${escape(doc.path)}</span><a href="${escape(doc.source)}" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div><article class="markdown">${doc.html}</article><div class="doc-footer">同步于 ${date(listing.updatedAt)}</div>`;
-  if (location.hash) { try { document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView(); } catch {} }
+  if (restore && Number.isFinite(history.state?.scrollY)) window.scrollTo(0, history.state.scrollY);
+  else if (location.hash) { try { document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView(); } catch {} }
+  else window.scrollTo(0, 0);
 }
 async function admin(run) {
   if (!adminPassword) {
@@ -88,12 +119,14 @@ async function admin(run) {
   document.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => { try { await api('/api/admin/sync', { id: b.dataset.sync }, true); toast('已开始同步，可在首页查看结果'); } catch (e) { toast(e.message); } });
   document.querySelectorAll('[data-delete]').forEach(b => b.onclick = async () => { if (!confirm('移除此文档入口？原 Git 仓库不会被修改。')) return; try { await api('/api/admin/delete', { id: b.dataset.delete }, true); render(); } catch (e) { toast(e.message); } });
 }
-async function render() {
+async function render(restore = false) {
+  restoring = true;
   clearTimeout(refreshTimer); const run = ++generation; document.title = 'Git Docs · 开发文档';
   try {
     if (location.pathname === '/admin') await admin(run);
-    else if (location.pathname.startsWith('/repo/')) await repository(location.pathname.split('/')[2], run);
+    else if (location.pathname.startsWith('/repo/')) await repository(location.pathname.split('/')[2], run, restore);
     else await home(run);
   } catch (e) { if (run === generation) app.innerHTML = `<section class="empty"><h1>暂时无法打开</h1><p>${escape(e.message)}</p><a class="button" href="/">返回首页</a><p class="hint">首次同步需要等待；同步异常可在首页查看原因。</p></section>`; }
+  if (run === generation) { restoring = false; savePosition(); }
 }
-render();
+render(true);
