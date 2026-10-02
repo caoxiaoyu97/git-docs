@@ -204,7 +204,28 @@ async function repository(id, run, restore) {
   }
   if (run !== generation) return;
   document.title = `${doc.title} · ${listing.name} · Git Docs`;
-  document.querySelector('#document').innerHTML = `<div class="doc-meta"><span>${escape(doc.path)}</span><a href="${escape(doc.source)}" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div><article class="markdown">${doc.html}</article><div class="doc-footer">同步于 ${date(listing.updatedAt)}</div>`;
+  const trail = doc.path.split('/');
+  const repoHref = '/repo/' + id + (requestedBranch ? '?branch=' + encodeURIComponent(requestedBranch) : '');
+  const crumbs = '<a class="crumb-repo" href="' + repoHref + '">' + escape(listing.name) + '</a>'
+    + trail.map((part, index) => '<span class="crumb-sep">›</span><span class="crumb' + (index === trail.length - 1 ? ' current' : '') + '">' + escape(part) + '</span>').join('');
+  const position = listing.documents.findIndex(item => item.path === selected);
+  const previous = position > 0 ? listing.documents[position - 1] : null;
+  const following = position >= 0 && position < listing.documents.length - 1 ? listing.documents[position + 1] : null;
+  const pageNav = '<nav class="page-nav" aria-label="上一篇和下一篇">'
+    + (previous ? '<a class="page-nav-item" href="' + docLink(id, previous.path) + '"><small>上一篇</small><span>' + escape(previous.title) + '</span></a>' : '<span class="page-nav-item empty"></span>')
+    + (following ? '<a class="page-nav-item next" href="' + docLink(id, following.path) + '"><small>下一篇</small><span>' + escape(following.title) + '</span></a>' : '<span class="page-nav-item empty"></span>')
+    + '</nav>';
+  document.querySelector('#document').innerHTML = '<div class="doc-meta"><nav class="crumbs" aria-label="文档位置">' + crumbs + '</nav><div class="doc-actions"><button class="secondary" id="copy-raw" type="button">复制原文</button><a href="' + escape(doc.source) + '" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div></div><article class="markdown">' + doc.html + '</article>' + pageNav + '<div class="doc-footer">同步于 ' + date(listing.updatedAt) + '</div>';
+  const copyRaw = document.querySelector('#copy-raw');
+  copyRaw.onclick = async () => {
+    copyRaw.disabled = true;
+    try {
+      const response = await fetch('/raw?repo=' + encodeURIComponent(id) + '&path=' + encodeURIComponent(selected) + (requestedBranch ? '&branch=' + encodeURIComponent(requestedBranch) : ''));
+      if (!response.ok) throw new Error('read failed');
+      await copyText(await response.text());
+    } catch { toast('原文读取失败，请稍后重试'); }
+    finally { copyRaw.disabled = false; }
+  };
   document.querySelector('#document').dataset.updatedAt = listing.updatedAt || '';
   enhanceReading(selected);
   if (restore && Number.isFinite(history.state?.scrollY)) window.scrollTo(0, history.state.scrollY);
@@ -225,6 +246,31 @@ async function copyText(value) {
   } catch { toast('浏览器未允许复制，请手动选择内容复制'); }
 }
 let disposeReading = () => {};
+let lightbox = null;
+function lightboxKeys(event) { if (event.key === 'Escape') closeLightbox(); }
+function closeLightbox() {
+  if (!lightbox) return;
+  document.removeEventListener('keydown', lightboxKeys);
+  lightbox.remove();
+  lightbox = null;
+}
+function openLightbox(source, alt) {
+  if (!source) return;
+  closeLightbox();
+  lightbox = document.createElement('div');
+  lightbox.className = 'lightbox';
+  lightbox.setAttribute('role', 'dialog');
+  lightbox.setAttribute('aria-label', alt || '图片预览');
+  const image = document.createElement('img');
+  image.src = source;
+  image.alt = alt;
+  const hint = document.createElement('p');
+  hint.textContent = '点击任意位置或按 Esc 关闭';
+  lightbox.append(image, hint);
+  lightbox.addEventListener('click', closeLightbox);
+  document.body.append(lightbox);
+  document.addEventListener('keydown', lightboxKeys);
+}
 function enhanceReading(selected) {
   const article = document.querySelector('.markdown');
   const used = new Set([...article.querySelectorAll('[id]')].map(e => e.id));
@@ -242,6 +288,10 @@ function enhanceReading(selected) {
     const wrapper = document.createElement('div'); wrapper.className = 'code-block'; pre.before(wrapper); wrapper.append(pre);
     const button = document.createElement('button'); button.className = 'copy-code'; button.textContent = '复制代码';
     button.onclick = () => copyText(code.textContent); wrapper.append(button);
+  });
+  article.querySelectorAll('img').forEach(image => {
+    image.classList.add('zoomable');
+    image.addEventListener('click', () => openLightbox(image.currentSrc || image.src, image.alt || ''));
   });
   const sections = headings.filter(h => h.matches('h2,h3'));
   let links = [];
@@ -320,6 +370,7 @@ async function admin(run) {
 async function render(restore = false) {
   clearTimeout(branchTimer); clearTimeout(branchListTimer);
   disposeReading();
+  closeLightbox();
   restoring = true;
   clearTimeout(refreshTimer); const run = ++generation; document.title = 'Git Docs · 开发文档';
   try {

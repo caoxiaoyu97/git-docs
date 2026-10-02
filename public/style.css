@@ -30,3 +30,95 @@ mark{background:#fff0a6;color:#503c00;border-radius:2px}.settings-form{margin-to
 .probe-bar input{flex:1;min-width:180px}
 .probe-output{background:#172438;color:#e2ebf9;padding:18px;border-radius:9px;font-size:13px;line-height:1.6;max-height:420px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
 @media(max-width:900px){.ai-grid{grid-template-columns:1fr}}
+/* 阅读增强：页头按钮、面包屑、上下篇、图片放大 */
+.top-right{display:flex;align-items:center;gap:22px}
+.theme-toggle{background:transparent;color:#526078;border:1px solid var(--border);padding:7px 12px;font-size:13px;font-weight:500}
+.theme-toggle:hover{background:#eef3fb;text-decoration:none}
+.doc-meta{align-items:flex-start}
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;font-size:12px}
+.crumb-repo{color:#3265c8;font-weight:600}
+.crumb-sep{color:#a9b4c4}
+.crumb{color:#6c7a8c}
+.crumb.current{color:#24334b;font-weight:600}
+.doc-actions{display:flex;align-items:center;gap:12px;flex:none;flex-wrap:wrap}
+.doc-actions button{font-size:12px;padding:6px 12px}
+.page-nav{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:950px;margin:38px auto 0}
+.page-nav-item{display:block;border:1px solid var(--border);border-radius:9px;padding:14px 16px;background:white}
+.page-nav-item small{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.page-nav-item span{color:#24334b;font-weight:600;overflow-wrap:anywhere}
+.page-nav-item.next{text-align:right}
+.page-nav-item.empty{border:0;background:transparent}
+a.page-nav-item:hover{border-color:#7999e4;text-decoration:none}
+.markdown img.zoomable{cursor:zoom-in}
+.lightbox{position:fixed;inset:0;z-index:60;background:#0b1119e6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:28px;cursor:zoom-out}
+.lightbox img{max-width:94vw;max-height:84vh;border-radius:8px;box-shadow:0 10px 40px #0008}
+.lightbox p{color:#c8d4e4;font-size:13px;margin:0}
+@media(max-width:700px){.page-nav{grid-template-columns:1fr}.top-right{gap:12px}}
+/* 深色模式 */
+:root[data-theme=dark]{color:#e6edf7;background:#101823;--blue:#6f9dff;--muted:#93a3b8;--border:#2b3646}
+:root[data-theme=dark] a{color:#8fb4ff}
+:root[data-theme=dark] button,:root[data-theme=dark] .button{background:#2f6ae0;color:#fff}
+:root[data-theme=dark] button:hover,:root[data-theme=dark] .button:hover{background:#3f7bf0}
+:root[data-theme=dark] .secondary{background:#1a2432;color:#c9d6e8;border-color:#2b3646}
+:root[data-theme=dark] .secondary:hover{background:#22303f}
+:root[data-theme=dark] .text-button{color:#ff9b9b}
+:root[data-theme=dark] .text-button:hover{background:#3a2222}
+:root[data-theme=dark] .theme-toggle{color:#a9b8cc;border-color:#2b3646}
+:root[data-theme=dark] .theme-toggle:hover{background:#22303f}
+:root[data-theme=dark] .top{background:#16202c;border-bottom-color:#2b3646}
+:root[data-theme=dark] .brand{color:#e6edf7}
+:root[data-theme=dark] .top nav a{color:#a9b8cc}
+:root[data-theme=dark] .repo-card{background:#1a2432;border-color:#2b3646}
+:root[data-theme=dark] .repo-card:hover{border-color:#5b7fd4}
+:root[data-theme=dark] .repo-icon{background:#1e2a3c;color:#8fb4ff}
+:root[data-theme=dark] .badge{background:#172a20;color:#82d3a6}
+:root[data-theme=dark] .badge.warn{background:#3a2f1a;color:#e6bc6a}
+:root[data-theme=dark] .count{color:#b8c6d8}
+:root[data-theme=dark] .count span{color:#8f9daf}
+:root[data-theme=dark] .card-foot{border-top-color:#26313f}
+:root[data-theme=dark] footer{color:#8f9daf}
+:root[data-theme=dark] .empty p{color:#93a3b8}
+:root[data-theme=dark] .sidebar{background:#141d29;border-right-color:#2b3646}
+:root[data-theme=dark] .back{color:#93a3b8}
+:root[data-theme=dark] .tree details summary{color:#a3b2c6}
+:root[data-theme=dark] .tree-file{color:#b8c6d8}
+:root[data-theme=dark] .tree-file:hover{background:#1e2a3a}
+:root[data-theme=dark] .tree-file.selected{background:#1d2f4d;color:#a8c6ff}
+:root[data-theme=dark] .tree-file small{color:#8b97a8}
+:root[data-theme=dark] .reader{background:#1a2432}
+:root[data-theme=dark] .doc-meta{color:#93a3b8;border-bottom-color:#26313f}
+:root[data-theme=dark] .crumb-repo{color:#8fb4ff}
+:root[data-theme=dark] .crumb-sep,:root[data-theme=dark] .crumb{color:#8f9daf}
+:root[data-theme=dark] .crumb.current{color:#e6edf7}
+:root[data-theme=dark] .page-nav-item{background:#1a2432;border-color:#2b3646}
+:root[data-theme=dark] .page-nav-item span{color:#dfe8f5}
+:root[data-theme=dark] .page-nav-item.empty{background:transparent;border:0}
+:root[data-theme=dark] .markdown{color:#dbe5f2}
+:root[data-theme=dark] .markdown h2{border-bottom-color:#26313f}
+:root[data-theme=dark] .markdown code{background:#23303f;color:#a8c7ff}
+:root[data-theme=dark] .markdown pre{background:#0d1520}
+:root[data-theme=dark] .markdown blockquote{border-left-color:#5b86e0;background:#1c2837;color:#a9b8cc}
+:root[data-theme=dark] .markdown th,:root[data-theme=dark] .markdown td{border-color:#2b3646}
+:root[data-theme=dark] .markdown th{background:#202b39}
+:root[data-theme=dark] .doc-footer{color:#93a3b8;border-top-color:#2b3646}
+:root[data-theme=dark] .article-outline{background:#1b2634;color:#a9b8cc}
+:root[data-theme=dark] .article-outline a{color:#a9b8cc}
+:root[data-theme=dark] .article-outline a.active{border-color:#4a7fe0;color:#a8c6ff;background:#1d2f4d}
+:root[data-theme=dark] input{background:#121b26;color:#e6edf7;border-color:#2b3646}
+:root[data-theme=dark] .search-result small,:root[data-theme=dark] .search-result p{color:#93a3b8}
+:root[data-theme=dark] mark{background:#6b5a1a;color:#ffeb9c}
+:root[data-theme=dark] .login,:root[data-theme=dark] .form-card,:root[data-theme=dark] .managed-repo{background:#1a2432;border-color:#2b3646}
+:root[data-theme=dark] .managed-repo p,:root[data-theme=dark] .managed-repo small{color:#93a3b8}
+:root[data-theme=dark] .error{color:#ff9b9b!important}
+:root[data-theme=dark] .mobile-directory{background:#141d29}
+:root[data-theme=dark] .branch-option{background:#1a2432;color:#b8c6d8;border-color:#2b3646}
+:root[data-theme=dark] .branch-option.synced{background:#172a20;color:#82d3a6;border-color:#2b4a38}
+:root[data-theme=dark] .branch-option.syncing{background:#16263f;color:#8fb4ff;border-color:#2c4472}
+:root[data-theme=dark] .branch-option.failed{background:#3a2222;color:#ff9b9b;border-color:#5a3030}
+:root[data-theme=dark] .cache-row span,:root[data-theme=dark] .cache-row small,:root[data-theme=dark] .branch-status-note{color:#93a3b8}
+:root[data-theme=dark] .ai-card{background:#1a2432;border-color:#2b3646}
+:root[data-theme=dark] .ai-tools code{background:#23303f;color:#a8c7ff}
+:root[data-theme=dark] .copy-row{background:#161f2b;border-color:#2b3646}
+:root[data-theme=dark] .copy-row code{color:#dfe8f5}
+:root[data-theme=dark] .probe-output{background:#0d1520}
+:root[data-theme=dark] .settings-status{color:#82d3a6}

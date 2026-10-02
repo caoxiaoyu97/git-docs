@@ -196,7 +196,7 @@ async function serve() {
         if (ext === '.pdf') res.setHeader('Content-Disposition', 'attachment');
         res.writeHead(200, { 'Content-Type': mime }); res.end(await fs.readFile(path.join(snapshot.root, 'files', ...file.split('/')))); return;
       }
-      const staticFiles = { '/app.js': ['app.js', 'text/javascript'], '/ai.js': ['ai.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.ico': ['favicon.svg', 'image/svg+xml'] };
+      const staticFiles = { '/app.js': ['app.js', 'text/javascript'], '/ai.js': ['ai.js', 'text/javascript'], '/theme.js': ['theme.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.ico': ['favicon.svg', 'image/svg+xml'] };
       const staticFile = staticFiles[route];
       if (staticFile) { res.writeHead(200, { 'Content-Type': staticFile[1] + '; charset=utf-8' }); return res.end(await fs.readFile(path.join(home, 'public', staticFile[0]))); }
       if (route === '/ai') {
