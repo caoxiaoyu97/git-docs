@@ -45,10 +45,18 @@ try {
   await pipeline(createReadStream(raw), createGzip({ level: 6 }), createWriteStream(output + '.tmp'));
   await fs.rename(output + '.tmp', output);
   await fs.unlink(raw);
+  // 一并输出启动向导和部署说明，让 release 目录可以直接分发。
+  for (const name of ['start.sh', 'start.bat']) {
+    const source = await fs.readFile(path.join(root, 'scripts', name), 'utf8');
+    const content = source.replaceAll('__VERSION__', pkg.version);
+    // .bat 必须是 CRLF，否则 cmd 会把命令解析错。
+    await fs.writeFile(path.join(release, name), name.endsWith('.bat') ? content.replace(/\r?\n/g, '\r\n') : content, { mode: 0o755 });
+  }
+  await fs.copyFile(path.join(root, '3-部署说明.md'), path.join(release, '3-部署说明.md'));
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(output)) hash.update(chunk);
   await fs.writeFile(output + '.sha256', `${hash.digest('hex')}  git-docs-images.tar.gz\n`);
-  console.log(`\n完成：${output}\n镜像：${tags.join('、')}\n部署：docker load -i git-docs-images.tar.gz`);
+  console.log(`\n完成：${output}\n镜像：${tags.join('、')}\n启动：./start.sh（Linux/macOS）或双击 start.bat（Windows）`);
 } catch (e) {
   console.error('\n打包未完成：' + e.message);
   process.exitCode = 1;
