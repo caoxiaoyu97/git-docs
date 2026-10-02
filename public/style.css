@@ -122,3 +122,8 @@ a.page-nav-item:hover{border-color:#7999e4;text-decoration:none}
 :root[data-theme=dark] .copy-row code{color:#dfe8f5}
 :root[data-theme=dark] .probe-output{background:#0d1520}
 :root[data-theme=dark] .settings-status{color:#82d3a6}
+/* Mermaid 图表 */
+.mermaid-diagram{margin:22px 0;padding:16px;border:1px solid var(--border);border-radius:9px;background:#fbfcfe;overflow:auto;text-align:center}
+.mermaid-diagram svg{max-width:100%;height:auto}
+.mermaid-diagram[data-processed=error]{font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap;text-align:left;color:#a64242}
+:root[data-theme=dark] .mermaid-diagram{background:#0f1822}

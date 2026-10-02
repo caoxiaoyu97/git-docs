@@ -72,7 +72,7 @@ async function serve() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: http:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
       const u = new URL(req.url, 'http://local'); const route = u.pathname;
@@ -195,6 +195,17 @@ async function serve() {
         res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
         if (ext === '.pdf') res.setHeader('Content-Disposition', 'attachment');
         res.writeHead(200, { 'Content-Type': mime }); res.end(await fs.readFile(path.join(snapshot.root, 'files', ...file.split('/')))); return;
+      }
+      if (route.startsWith('/vendor/')) {
+        const relative = route.slice('/vendor/'.length);
+        if (!validRelative(relative)) return send(404, { error: '资源不存在' });
+        try {
+          const body = await fs.readFile(path.join(home, 'dist', 'vendor', ...relative.split('/')));
+          const ext = path.extname(relative).toLowerCase();
+          const mime = ext === '.mjs' || ext === '.js' ? 'text/javascript' : ext === '.css' ? 'text/css' : 'application/octet-stream';
+          res.writeHead(200, { 'Content-Type': mime + (mime.startsWith('text/') ? '; charset=utf-8' : ''), 'Cache-Control': 'public, max-age=86400' });
+          return res.end(body);
+        } catch { return send(404, { error: '资源不存在' }); }
       }
       const staticFiles = { '/app.js': ['app.js', 'text/javascript'], '/ai.js': ['ai.js', 'text/javascript'], '/theme.js': ['theme.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'], '/favicon.ico': ['favicon.svg', 'image/svg+xml'] };
       const staticFile = staticFiles[route];

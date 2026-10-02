@@ -8,6 +8,7 @@
   function apply(value) {
     var theme = value || (media.matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', theme);
+    document.dispatchEvent(new CustomEvent('themechange', { detail: { theme: theme } }));
     var button = document.querySelector('#theme-toggle');
     if (button) {
       button.textContent = theme === 'dark' ? '☀ 浅色' : '☾ 深色';

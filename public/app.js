@@ -32,6 +32,7 @@ document.addEventListener('click', e => {
   }
 });
 window.addEventListener('popstate', () => render(true));
+document.addEventListener('themechange', () => { if (document.querySelector('.mermaid-diagram')) void renderDiagrams(); });
 
 async function home(run) {
   const { repos, intervalMinutes } = await api('/api/repos'); if (run !== generation) return;
@@ -271,6 +272,51 @@ function openLightbox(source, alt) {
   document.body.append(lightbox);
   document.addEventListener('keydown', lightboxKeys);
 }
+let mermaidPromise = null;
+function mermaidTheme() { return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'; }
+function loadMermaid() {
+  if (!mermaidPromise) {
+    mermaidPromise = import('/vendor/mermaid/mermaid.esm.min.mjs').then(module => {
+      const mermaid = module.default || module.mermaid;
+      if (!mermaid || typeof mermaid.run !== 'function') throw new Error('mermaid unavailable');
+      return mermaid;
+    }).catch(error => { mermaidPromise = null; throw error; });
+  }
+  return mermaidPromise;
+}
+async function renderDiagrams() {
+  const article = document.querySelector('.markdown');
+  if (!article) return;
+  const codes = [...article.querySelectorAll('code.language-mermaid')];
+  if (!codes.length && !article.querySelector('.mermaid-diagram')) return;
+  let mermaid;
+  try { mermaid = await loadMermaid(); } catch (error) { return; }
+  for (const code of codes) {
+    const container = document.createElement('div');
+    container.className = 'mermaid-diagram';
+    container.dataset.source = code.textContent;
+    const host = code.closest('.code-block') || code.parentElement;
+    host.replaceWith(container);
+  }
+  const containers = [...article.querySelectorAll('.mermaid-diagram')];
+  if (!containers.length) return;
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: mermaidTheme(), fontFamily: 'inherit', flowchart: { useMaxWidth: true }, sequence: { useMaxWidth: true }, gantt: { useMaxWidth: true } });
+  for (let index = 0; index < containers.length; index++) {
+    const container = containers[index];
+    const source = container.dataset.source || '';
+    try {
+      const rendered = await mermaid.render('mermaid-d' + index + '-' + Date.now().toString(36), source);
+      container.innerHTML = rendered.svg;
+      if (typeof rendered.bindFunctions === 'function') rendered.bindFunctions(container);
+      delete container.dataset.error;
+      container.dataset.processed = 'true';
+    } catch (error) {
+      container.textContent = source;
+      container.dataset.processed = 'error';
+      container.dataset.error = String(error && (error.message || error));
+    }
+  }
+}
 function enhanceReading(selected) {
   const article = document.querySelector('.markdown');
   const used = new Set([...article.querySelectorAll('[id]')].map(e => e.id));
@@ -317,6 +363,7 @@ function enhanceReading(selected) {
     });
   }
   window.addEventListener('scroll', update, { passive: true }); update();
+  void renderDiagrams();
   disposeReading = () => { window.removeEventListener('scroll', update); cancelAnimationFrame(frame); };
 }
 async function admin(run) {

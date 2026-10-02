@@ -20,6 +20,7 @@ WORKDIR /app
 ENV NODE_ENV=production GIT_DOCS_HOME=/app GIT_DOCS_DATA=/data
 COPY --from=build /build/dist/app.cjs ./app.cjs
 COPY --from=build /build/dist/licenses/ ./licenses/
+COPY --from=build /build/dist/vendor/ ./dist/vendor/
 COPY --from=build /build/public/ ./public/
 COPY docker/entry.cjs ./entry.cjs
 EXPOSE 8080

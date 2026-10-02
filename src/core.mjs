@@ -158,7 +158,8 @@ export function renderMarkdown(text, repo, snapshot, file) {
   markdown.use({ renderer: { code({ text, lang }) {
     const language = (lang || '').split(/\s/)[0];
     const html = language && highlight.getLanguage(language) ? highlight.highlight(text, { language, ignoreIllegals: true }).value : text.replace(/[&<>]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[s]));
-    return `<pre><code>${html}</code></pre>`;
+    const className = language.replace(/[^A-Za-z0-9+#-]/g, '');
+    return `<pre><code${className ? ' class="language-' + className + '"' : ''}>${html}</code></pre>`;
   }, heading({ tokens, depth }) {
     const html = this.parser.parseInline(tokens);
     const plain = sanitize(html, { allowedTags: [], allowedAttributes: {} });
