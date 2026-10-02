@@ -99,13 +99,18 @@ export function createAi({ getConfig, store }) {
   function raw(res, url) {
     const repo = dataset.findRepo(url.searchParams.get('repo'));
     const doc = dataset.getDoc(repo, url.searchParams.get('path'), url.searchParams.get('branch') || undefined);
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': 'text/markdown; charset=utf-8',
       'Cache-Control': 'public, max-age=30',
       'X-Doc-Repo': repo.id,
       'X-Doc-Branch': encodeURIComponent(doc.branch),
       'X-Doc-Path': encodeURIComponent(doc.path)
-    });
+    };
+    if (url.searchParams.get('download')) {
+      const name = doc.path.split('/').pop() || 'document.md';
+      headers['Content-Disposition'] = "attachment; filename*=UTF-8''" + encodeURIComponent(name);
+    }
+    res.writeHead(200, headers);
     res.end(doc.text);
   }
 

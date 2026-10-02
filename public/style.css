@@ -41,7 +41,7 @@ mark{background:#fff0a6;color:#503c00;border-radius:2px}.settings-form{margin-to
 .crumb{color:#6c7a8c}
 .crumb.current{color:#24334b;font-weight:600}
 .doc-actions{display:flex;align-items:center;gap:12px;flex:none;flex-wrap:wrap}
-.doc-actions button{font-size:12px;padding:6px 12px}
+.doc-actions button,.doc-actions .button{font-size:12px;padding:6px 12px}
 .page-nav{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:950px;margin:38px auto 0}
 .page-nav-item{display:block;border:1px solid var(--border);border-radius:9px;padding:14px 16px;background:white}
 .page-nav-item small{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}

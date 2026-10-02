@@ -233,12 +233,14 @@ async function repository(id, run, restore) {
     + (previous ? '<a class="page-nav-item" href="' + docLink(id, previous.path) + '"><small>上一篇</small><span>' + escape(previous.title) + '</span></a>' : '<span class="page-nav-item empty"></span>')
     + (following ? '<a class="page-nav-item next" href="' + docLink(id, following.path) + '"><small>下一篇</small><span>' + escape(following.title) + '</span></a>' : '<span class="page-nav-item empty"></span>')
     + '</nav>';
-  document.querySelector('#document').innerHTML = '<div class="doc-meta"><nav class="crumbs" aria-label="文档位置">' + crumbs + '</nav><div class="doc-actions"><button class="secondary" id="copy-raw" type="button">复制原文</button><a href="' + escape(doc.source) + '" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div></div><article class="markdown">' + doc.html + '</article>' + pageNav + '<div class="doc-footer">同步于 ' + date(listing.updatedAt) + '</div>';
+  const rawHref = '/raw?repo=' + encodeURIComponent(id) + '&path=' + encodeURIComponent(selected) + (requestedBranch ? '&branch=' + encodeURIComponent(requestedBranch) : '');
+  const downloadName = selected.split('/').pop() || 'document.md';
+  document.querySelector('#document').innerHTML = '<div class="doc-meta"><nav class="crumbs" aria-label="文档位置">' + crumbs + '</nav><div class="doc-actions"><a class="button secondary" id="download-raw" href="' + escape(rawHref + '&download=1') + '" download="' + escape(downloadName) + '">下载原文</a><button class="secondary" id="copy-raw" type="button">复制原文</button><a href="' + escape(doc.source) + '" target="_blank" rel="noopener noreferrer">在原仓库查看</a></div></div><article class="markdown">' + doc.html + '</article>' + pageNav + '<div class="doc-footer">同步于 ' + date(listing.updatedAt) + '</div>';
   const copyRaw = document.querySelector('#copy-raw');
   copyRaw.onclick = async () => {
     copyRaw.disabled = true;
     try {
-      const response = await fetch('/raw?repo=' + encodeURIComponent(id) + '&path=' + encodeURIComponent(selected) + (requestedBranch ? '&branch=' + encodeURIComponent(requestedBranch) : ''));
+      const response = await fetch(rawHref);
       if (!response.ok) throw new Error('read failed');
       await copyText(await response.text());
     } catch { toast('原文读取失败，请稍后重试'); }
