@@ -24,10 +24,27 @@ async function home(run) {
   app.innerHTML = `<section class="home"><div class="heading"><div><div class="eyebrow">DOCUMENT LIBRARY</div><h1>团队的开发文档</h1><p>按仓库查阅框架说明、模块用法与开发规范。</p></div><div class="sync-note">每 ${escape(intervalMinutes)} 分钟自动同步</div></div><div class="section-label">全部仓库 <span>${repos.length}</span></div>${repos.length ? `<div class="cards">${repos.map((r, i) => `<a class="repo-card" href="/repo/${r.id}"><div class="card-top"><span class="repo-icon">${String(i + 1).padStart(2, '0')}</span><span class="badge ${r.error ? 'warn' : ''}">${r.checking ? '同步中' : r.error ? '同步异常' : r.updatedAt ? '已同步' : '待同步'}</span></div><h2>${escape(r.name)}</h2><p class="count">${r.count} 篇文档${r.branch ? ` <span> / ${escape(r.branch)}</span>` : ''}</p><div class="card-foot">${r.error ? escape(r.error) : '更新于 ' + date(r.updatedAt)}</div></a>`).join('')}</div>` : `<div class="empty"><h2>添加你的第一个仓库</h2><p>连接 GitLab、GitHub 或 Gitee 后，Markdown 文档会自动出现在这里。</p><a class="button" href="/admin">添加仓库</a></div>`}<footer>文档内容来自 Git 仓库 · 原仓库保持不变</footer></section>`;
   refreshTimer = setTimeout(() => { if (location.pathname === '/') render(); }, 15000);
 }
+const folderStates = new Map();
+function openFolders(id) {
+  if (!folderStates.has(id)) {
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem('git-docs:folders:' + id) || '[]'); } catch {}
+    folderStates.set(id, new Set(Array.isArray(saved) ? saved.filter(p => typeof p === 'string') : []));
+  }
+  return folderStates.get(id);
+}
+document.addEventListener('toggle', event => {
+  const folder = event.target;
+  if (!folder.matches?.('details[data-folder]') || !folder.isConnected) return;
+  const id = folder.dataset.repo;
+  const opened = openFolders(id);
+  if (folder.open) opened.add(folder.dataset.folder); else opened.delete(folder.dataset.folder);
+  try { localStorage.setItem('git-docs:folders:' + id, JSON.stringify([...opened])); } catch {}
+}, true);
 function treeHtml(docs, id, selected) {
   const root = { dirs: Object.create(null), files: [] };
   for (const doc of docs) { const parts = doc.path.split('/'); let node = root; for (const part of parts.slice(0, -1)) node = node.dirs[part] ||= { dirs: Object.create(null), files: [] }; node.files.push(doc); }
-  function build(node) { return Object.entries(node.dirs).map(([name, sub]) => `<details open><summary>${escape(name)}</summary><div class="tree-nested">${build(sub)}</div></details>`).join('') + node.files.map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}<small>${escape(d.path.split('/').at(-1))}</small></a>`).join(''); }
+  function build(node, parent = "") { return Object.entries(node.dirs).map(([name, sub]) => { const folder = parent ? parent + "/" + name : name; return `<details data-repo="${escape(id)}" data-folder="${escape(folder)}"${openFolders(id).has(folder) ? " open" : ""}><summary>${escape(name)}</summary><div class="tree-nested">${build(sub, folder)}</div></details>`; }).join('') + node.files.map(d => `<a class="tree-file ${d.path === selected ? 'selected' : ''}" href="${docLink(id, d.path)}" title="${escape(d.path)}">${escape(d.title)}<small>${escape(d.path.split('/').at(-1))}</small></a>`).join(''); }
   return build(root);
 }
 async function repository(id, run) {

@@ -27,7 +27,9 @@ if (command === 'serve' && !fs.existsSync(file)) {
 if (command === 'reset-password') {
   if (!fs.existsSync(file)) throw new Error('请先启动服务完成初始化');
   const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const password = newPassword(); config.adminHash = hash(password);
+  const password = process.env.GIT_DOCS_ADMIN_PASSWORD || newPassword();
+  if (password.length < 10) throw new Error('管理密码至少需要 10 位');
+  config.adminHash = hash(password);
   save(passwordFile, password + '\n'); save(file, JSON.stringify(config, null, 2));
   console.log('管理密码已重置，启动服务后可查看 /data/admin-password.txt。');
 } else {
