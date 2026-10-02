@@ -113,6 +113,18 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   assert.equal((await mcpCall({ jsonrpc: '2.0', method: 'notifications/initialized' })).status, 202);
   assert.equal((await fetch(base + '/mcp')).status, 405);
   assert.equal((await fetch(base + '/mcp', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'x' })).status, 415);
+  const hookEndpoint = base + '/hook';
+  assert.equal((await fetch(hookEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+  assert.equal((await fetch(hookEndpoint + '?token=wrong', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+  const hookForm = new URLSearchParams({ payload: JSON.stringify({ project: { git_http_url: mock.base + '/team/framework.git' } }) }).toString();
+  const hookRun = await fetch(hookEndpoint + '?token=test-admin-password', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: hookForm });
+  assert.equal(hookRun.status, 200);
+  assert.deepEqual((await hookRun.json()).triggered, ['测试框架']);
+  const hookHeader = await fetch(hookEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Gitlab-Token': 'test-admin-password' }, body: JSON.stringify({ project: { git_http_url: mock.base + '/team/framework.git' } }) });
+  assert.equal(hookHeader.status, 200);
+  assert.deepEqual((await hookHeader.json()).triggered, [], '同一仓库在冷却期内不应重复触发');
+  const hookOther = await fetch(hookEndpoint + '?token=test-admin-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository: { html_url: 'https://example.com/other/repo' } }) });
+  assert.equal((await hookOther.json()).matched, 0);
   assert.equal((await fetch(base + '/')).status, 200);
   const branches = await (await fetch(base + `/api/repo/${repo.id}/branches`)).json();
   assert.deepEqual(branches.branches.map(b=>b.name), ['dev','main']);

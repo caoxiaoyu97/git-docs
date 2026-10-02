@@ -8,6 +8,7 @@ import { Store, atomicJson, readJson, repoConfig, digest, verifySecret, renderMa
 import { BranchStore } from './branches.mjs';
 import { sourceUrl } from './providers.mjs';
 import { createAi } from './ai/index.mjs';
+import { createHook } from './hook/index.mjs';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { gzipSync, brotliCompressSync, constants as zlibConstants } from 'node:zlib';
@@ -105,6 +106,7 @@ async function serve() {
   for (const repo of config.repos) await store.load(repo);
   await store.prune(config.repos.map(r => r.id));
   const ai = createAi({ getConfig: () => config, store });
+  const hook = createHook({ getConfig: () => config, store });
   let stopping = false; let ticking = false; let editing = false;
   async function tick() {
     if (ticking || stopping) return; ticking = true;
@@ -126,6 +128,7 @@ async function serve() {
     try {
       const u = new URL(req.url, 'http://local'); const route = u.pathname;
       if (await ai.handle(req, res, u)) return;
+      if (await hook.handle(req, res, u)) return;
       if (route.startsWith('/api/admin/')) {
         const secret = String(req.headers.authorization || '').replace(/^Bearer /, '');
         if (!verifySecret(secret, config.adminHash)) return send(401, { error: '管理密码不正确' });

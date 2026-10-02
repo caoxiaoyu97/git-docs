@@ -64,6 +64,20 @@ test/                      模拟 GitLab 与自动化测试
 
 打包不会包含本地 data、Token、文档缓存或镜像归档；`.dockerignore` 使用白名单。版本号只需修改 `package.json`：镜像标签、镜像内的版本标签和请求 User-Agent 都由它自动生成，发布时再同步 3-部署说明.md 里的示例标签即可。
 
+## 推送即同步（webhook）
+
+在 Git 平台给仓库加一条 Webhook，push 之后平台会主动通知本服务，文档几秒内就更新，不用等定时同步。
+
+- 地址填：http://服务器地址:端口/hook?token=密码
+- 密码默认就是管理密码。如果想让推送用的密码和管理密码分开，给容器设置环境变量 GIT_DOCS_HOOK_TOKEN 即可，设置后只认这个值。
+- 内容类型：GitLab 保持默认的 application/x-www-form-urlencoded 就行，GitHub 和 Gitee 选 application/json。也支持 GitLab / Gitee 的密码字段，服务会同时读 X-Gitlab-Token 和 X-Gitee-Token 请求头。
+- 触发事件：只要 push（推事件），不必勾选全部。
+
+服务收到通知后只会处理配置里已有的仓库，并且同一个仓库 15 秒内只触发一次，避免一次 push 的多条通知重复同步。定时同步仍然保留，作为兜底。
+
+安全提醒：写进地址的密码会以明文保存在 Git 平台的 Webhook 配置里，能看到这个仓库设置的人都能看到它。如果这批人和使用管理后台的不是同一批人，建议改用独立的 GIT_DOCS_HOOK_TOKEN。
+
+
 ## 给 AI 使用（MCP 与原始 Markdown）
 
 服务内置一个面向 AI 的独立模块，复用同一份已同步的文档，不额外占用存储，也不影响阅读页面。主服务只把匹配到的路由转发给它。
