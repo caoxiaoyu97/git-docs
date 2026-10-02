@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="通过 MCP 让 AI 接入 Git Docs 文档"><title>AI 接入 · Git Docs</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/ai.js" defer></script></head><body>
+<header class="top"><a href="/" class="brand"><span class="mark">G</span>Git Docs <span class="brand-sub">开发文档</span></a><nav><a href="/">文档首页</a><a href="/ai" class="active">AI 接入</a><a href="/admin">管理仓库</a></nav></header>
+<main class="ai">
+  <div class="heading"><div><div class="eyebrow">AI ACCESS</div><h1>让 AI 接入这些文档</h1><p>业务组的 AI 工具可以通过 MCP 直接检索和读取框架文档，不用再手工复制粘贴。</p></div></div>
+
+  <div class="ai-grid">
+    <div class="ai-card">
+      <h2>接入地址</h2>
+      <p class="hint">MCP 端点，内网里能打开本页的机器都可以用。</p>
+      <div class="copy-row"><code id="ai-mcp">读取中…</code><button class="secondary" data-copy="#ai-mcp">复制</button></div>
+      <h3>在 AI 工具里配置一次</h3>
+      <div class="copy-row"><code id="ai-claude">读取中…</code><button class="secondary" data-copy="#ai-claude">复制</button></div>
+      <div class="copy-row"><code id="ai-codex">读取中…</code><button class="secondary" data-copy="#ai-codex">复制</button></div>
+      <p class="hint">Cursor 等工具在 MCP 配置里填同一个地址即可。</p>
+    </div>
+    <div class="ai-card">
+      <h2>AI 能做什么</h2>
+      <table class="ai-tools"><thead><tr><th>工具</th><th>说明</th></tr></thead><tbody>
+        <tr><td><code>list_repos</code></td><td>列出所有仓库、默认分支和文档数量</td></tr>
+        <tr><td><code>list_branches</code></td><td>列出某个仓库已缓存、可阅读的分支</td></tr>
+        <tr><td><code>list_docs</code></td><td>列出某个仓库的文档路径和标题</td></tr>
+        <tr><td><code>search_docs</code></td><td>按关键词搜索，返回命中的路径、标题和正文片段</td></tr>
+        <tr><td><code>get_doc</code></td><td>按路径读取单篇文档的原始 Markdown</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="ai-card">
+    <h2>浏览器直接打开</h2>
+    <ul id="ai-links" class="ai-links"><li class="muted">正在读取仓库…</li></ul>
+  </div>
+
+  <div class="ai-card">
+    <h2>在线测试</h2>
+    <p class="hint">下面直接调用 MCP 端点，和 AI 用的是同一条通道。</p>
+    <div class="probe-bar">
+      <button id="probe-repos">列出仓库</button>
+      <button id="probe-docs">列出文档</button>
+      <input id="probe-query" placeholder="搜索关键词，例如 Maven">
+      <button id="probe-search">搜索</button>
+    </div>
+    <pre id="probe-output" class="probe-output">点击上面的按钮开始。</pre>
+  </div>
+</main>
+<div id="toast" role="status" hidden></div>
+</body></html>
