@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.7.0-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.7.0-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.7.1-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.7.1-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -145,6 +145,11 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 图表在浏览器本地渲染，脚本来自服务自身的 /vendor/mermaid，不依赖外网 CDN，而且只在页面真的出现图表时才加载。构建时会把 Mermaid 复制到 dist/vendor/mermaid（已被 gitignore，不属于源码），Docker 镜像里也已包含，因此离线可用。
 
 因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
+
+
+## 1.7.1 下载原文
+
+文档页右上角新增“下载原文”，把当前文档的原始 Markdown 存成 .md 文件，文件名沿用仓库里的原名。“复制原文”保留，方便直接粘贴给 AI。
 
 
 ## 1.7.0 阅读体验与性能
