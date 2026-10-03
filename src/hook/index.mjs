@@ -89,12 +89,17 @@ export function createHook({ getConfig, store }) {
       }
       const now = Date.now();
       const triggered = [];
+      const branch = typeof payload?.ref === 'string' && payload.ref.startsWith('refs/heads/')
+        ? payload.ref.slice('refs/heads/'.length) : null;
       for (const key of matched) {
         const repo = repos.find(item => normalize(item.url) === key);
         if (!repo) continue;
+        // 只同步推送的默认分支或已有快照的分支；通知不能触发新分支下载。
+        if (!branch || payload.deleted === true) continue;
+        if (branch !== store.defaultBranch(repo) && !store.snapshot(repo, branch)) continue;
         if (now - (lastRun.get(repo.id) || 0) < COOLDOWN_MS) continue;
         lastRun.set(repo.id, now);
-        void store.sync(repo);
+        void store.sync(repo, branch);
         triggered.push(repo.name);
       }
       send(200, { ok: true, matched: matched.size, triggered });

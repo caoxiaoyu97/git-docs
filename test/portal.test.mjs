@@ -116,11 +116,11 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   const hookEndpoint = base + '/hook';
   assert.equal((await fetch(hookEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
   assert.equal((await fetch(hookEndpoint + '?token=wrong', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
-  const hookForm = new URLSearchParams({ payload: JSON.stringify({ project: { git_http_url: mock.base + '/team/framework.git' } }) }).toString();
+  const hookForm = new URLSearchParams({ payload: JSON.stringify({ ref: 'refs/heads/main', project: { git_http_url: mock.base + '/team/framework.git' } }) }).toString();
   const hookRun = await fetch(hookEndpoint + '?token=test-admin-password', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: hookForm });
   assert.equal(hookRun.status, 200);
   assert.deepEqual((await hookRun.json()).triggered, ['测试框架']);
-  const hookHeader = await fetch(hookEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Gitlab-Token': 'test-admin-password' }, body: JSON.stringify({ project: { git_http_url: mock.base + '/team/framework.git' } }) });
+  const hookHeader = await fetch(hookEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Gitlab-Token': 'test-admin-password' }, body: JSON.stringify({ ref: 'refs/heads/main', project: { git_http_url: mock.base + '/team/framework.git' } }) });
   assert.equal(hookHeader.status, 200);
   assert.deepEqual((await hookHeader.json()).triggered, [], '同一仓库在冷却期内不应重复触发');
   const hookOther = await fetch(hookEndpoint + '?token=test-admin-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository: { html_url: 'https://example.com/other/repo' } }) });

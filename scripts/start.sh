@@ -25,10 +25,7 @@ esac
 IMAGE="git-docs:${VERSION}-${ARCH}"
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  FOUND=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^git-docs:.*-${ARCH}$" | head -n 1)
-  if [ -n "$FOUND" ]; then
-    IMAGE="$FOUND"
-  elif [ -f "git-docs-images.tar.gz" ]; then
+  if [ -f "git-docs-images.tar.gz" ]; then
     echo "正在导入镜像，第一次需要一两分钟…"
     gzip -dc git-docs-images.tar.gz | docker load || exit 1
   else
@@ -39,10 +36,26 @@ fi
 echo "使用镜像：$IMAGE"
 echo
 
+docker info >/dev/null 2>&1 || { echo "Docker 未运行。"; exit 1; }
+UPDATING=0
+if docker container inspect "$NAME" >/dev/null 2>&1; then
+  echo "已存在容器 $NAME。更新会重建容器，保留原数据。"
+  printf "是否更新？[y/N]： "
+  read -r CONFIRM
+  case "$CONFIRM" in y|Y|yes|YES) ;; *) echo "已取消。"; exit 0 ;; esac
+  MOUNT_TYPE=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' "$NAME")
+  [ "$MOUNT_TYPE" = bind ] || { echo "原容器未使用外部目录挂载 /data，请手动更新以保留数据。"; exit 1; }
+  DEFAULT_DIR=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' "$NAME")
+  OLD_PORT=$(docker inspect --format '{{range index .HostConfig.PortBindings "8080/tcp"}}{{.HostPort}}{{end}}' "$NAME")
+  [ -z "$OLD_PORT" ] || PORT="$OLD_PORT"
+  UPDATING=1
+fi
+
 printf "数据目录 [%s]： " "$DEFAULT_DIR"
 read -r DATA_DIR
 [ -z "$DATA_DIR" ] && DATA_DIR="$DEFAULT_DIR"
 mkdir -p "$DATA_DIR" || exit 1
+DATA_DIR=$(cd "$DATA_DIR" && pwd -P) || exit 1
 
 INITIALIZED=0
 if [ -f "$DATA_DIR/config.json" ]; then
@@ -65,28 +78,43 @@ done
 while :; do
   printf "网页端口 [%s]： " "$PORT"
   read -r INPUT_PORT
-  [ -n "$INPUT_PORT" ] && PORT="$INPUT_PORT"
-  if docker ps --format '{{.Ports}}' | grep -q ":$PORT->"; then
+  [ -n "$INPUT_PORT" ] || INPUT_PORT="$PORT"
+  case "$INPUT_PORT" in *[!0-9]*|'') echo "请输入 1–65535 的整数端口。"; continue ;; esac
+  if [ ${#INPUT_PORT} -gt 5 ] || [ "$INPUT_PORT" -lt 1 ] || [ "$INPUT_PORT" -gt 65535 ]; then
+    echo "请输入 1–65535 的整数端口。"; continue
+  fi
+  PORT=$(printf '%s' "$INPUT_PORT" | sed 's/^0*//')
+  if docker ps --format '{{.Names}} {{.Ports}}' | awk -v name="$NAME" '$1 != name' | grep -q ":$PORT->"; then
     echo "端口 $PORT 已被其他容器占用，请换一个。"
     continue
   fi
   break
 done
 
-if docker container inspect "$NAME" >/dev/null 2>&1; then
+if [ "$UPDATING" -eq 1 ]; then
   echo "已存在同名容器 $NAME，先移除它（数据还在数据目录里）…"
   docker rm -f "$NAME" >/dev/null || exit 1
 fi
 
 echo
 echo "正在启动…"
-if ! docker run -d --name "$NAME" -p "$PORT:8080" -v "$DATA_DIR:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$PASSWORD" "$IMAGE" >/dev/null; then
+if ! docker run -d --name "$NAME" --restart no -p "$PORT:8080" -v "$DATA_DIR:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$PASSWORD" "$IMAGE"; then
   echo "启动失败。常见原因：端口 $PORT 已被占用，或 Docker 没有运行。"
   exit 1
 fi
 
 echo
-echo "启动完成。"
+echo "正在等待服务就绪…"
+ATTEMPT=0
+HEALTHY=0
+while [ "$ATTEMPT" -lt 45 ]; do
+  STATE=$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$NAME") || break
+  case "$STATE" in 'running healthy') HEALTHY=1; break ;; *exited*|*dead*|*unhealthy*) break ;; esac
+  ATTEMPT=$((ATTEMPT + 1))
+  sleep 2
+done
+[ "$HEALTHY" -eq 1 ] || { echo "服务尚未就绪，请执行 docker logs $NAME 查看原因。"; exit 1; }
+echo "启动完成，服务健康。"
 echo "网址：http://localhost:$PORT"
 echo "数据目录：$DATA_DIR"
 if [ "$INITIALIZED" -eq 1 ]; then

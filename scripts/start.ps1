@@ -35,9 +35,26 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "使用镜像：$image"
 Write-Host ''
 
+docker info *> $null
+if ($LASTEXITCODE -ne 0) { Write-Host 'Docker 未运行。'; exit 1 }
+$existing = docker container inspect $name 2>$null
+$updating = $LASTEXITCODE -eq 0
+if ($updating) {
+  $old = ($existing | ConvertFrom-Json)[0]
+  Write-Host "已存在容器 $name（$($old.Config.Image)）。更新会重建容器，保留原数据。"
+  $confirm = Read-Host '是否更新？[y/N]'
+  if ($confirm -notmatch '^(y|yes)$') { Write-Host '已取消。'; exit 0 }
+  $mount = $old.Mounts | Where-Object Destination -eq '/data' | Select-Object -First 1
+  if (-not $mount -or $mount.Type -ne 'bind') { Write-Host '原容器未使用外部目录挂载 /data，请手动更新以保留数据。'; exit 1 }
+  $defaultDir = $mount.Source
+  $binding = $old.HostConfig.PortBindings.'8080/tcp' | Select-Object -First 1
+  if ($binding) { $port = [int]$binding.HostPort }
+}
+
 $answer = Read-Host "数据目录 [$defaultDir]"
 $dataDir = if ([string]::IsNullOrWhiteSpace($answer)) { $defaultDir } else { $answer }
 New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+$dataDir = (Resolve-Path -LiteralPath $dataDir).Path
 
 $initialized = Test-Path -LiteralPath (Join-Path $dataDir 'config.json')
 if ($initialized) {
@@ -58,23 +75,26 @@ while ($true) {
 while ($true) {
   $answer = Read-Host "网页端口 [$port]"
   $parsed = 0
-  if (-not [string]::IsNullOrWhiteSpace($answer) -and [int]::TryParse($answer, [ref]$parsed)) { $port = $parsed }
-  if (docker ps --format '{{.Ports}}' | Select-String -SimpleMatch ":$port->") {
+  if ([string]::IsNullOrWhiteSpace($answer)) { $parsed = $port }
+  elseif (-not [int]::TryParse($answer, [ref]$parsed)) { Write-Host '请输入 1–65535 的整数端口。'; continue }
+  if ($parsed -lt 1 -or $parsed -gt 65535) { Write-Host '请输入 1–65535 的整数端口。'; continue }
+  $port = $parsed
+  if (docker ps --format '{{.Names}} {{.Ports}}' | Where-Object { ($_ -split ' ', 2)[0] -ne $name } | Select-String -SimpleMatch ":$port->") {
     Write-Host "端口 $port 已被其他容器占用，请换一个。"
     continue
   }
   break
 }
 
-docker container inspect $name *> $null
-if ($LASTEXITCODE -eq 0) {
+if ($updating) {
   Write-Host "已存在同名容器 $name，先移除它（数据还在数据目录里）..."
   docker rm -f $name *> $null
+  if ($LASTEXITCODE -ne 0) { Write-Host '旧容器移除失败，已停止更新。'; exit 1 }
 }
 
 Write-Host ''
 Write-Host '正在启动...'
-docker run -d --name $name -p "${port}:8080" -v "${dataDir}:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$password" $image *> $null
+docker run -d --name $name --restart no -p "${port}:8080" -v "${dataDir}:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$password" $image
 if ($LASTEXITCODE -ne 0) {
   Write-Host "启动失败。常见原因：端口 $port 已被占用，或 Docker 没有运行。"
   Read-Host '按回车退出'
@@ -82,7 +102,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ''
-Write-Host '启动完成。'
+Write-Host '正在等待服务就绪…'
+$healthy = $false
+for ($attempt = 0; $attempt -lt 45; $attempt++) {
+  $state = docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' $name 2>$null
+  if ($LASTEXITCODE -ne 0) { break }
+  if ($state -eq 'running healthy') { $healthy = $true; break }
+  if ($state -match 'exited|dead|unhealthy') { break }
+  Start-Sleep -Seconds 2
+}
+if (-not $healthy) { Write-Host "服务尚未就绪，请执行 docker logs $name 查看原因。"; exit 1 }
+Write-Host '启动完成，服务健康。'
 Write-Host "网址：http://localhost:$port"
 Write-Host "数据目录：$dataDir"
 if ($initialized) {

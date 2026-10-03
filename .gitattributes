@@ -1,0 +1,3 @@
+scripts/start.sh text eol=lf
+scripts/start.bat text eol=crlf
+scripts/start.ps1 text eol=crlf
