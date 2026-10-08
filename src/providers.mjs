@@ -33,6 +33,11 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
 
   async function request(route, archive = false) {
     let url = new URL(root + route); let currentHeaders = { ...headers };
+    const stage = archive ? '下载仓库压缩包' : !route ? '读取项目信息' : route.includes('/branches?') ? '读取分支列表' : route.includes('/branches/') ? '读取分支提交' : '读取仓库文件';
+    const context = response => {
+      const requestId = response?.headers.get('x-request-id');
+      return `（${stage}；GET ${url.pathname}${requestId && /^[a-zA-Z0-9._:-]{1,128}$/.test(requestId) ? `；请求编号 ${requestId}` : ''}）`;
+    };
     for (let hop = 0; hop < 6; hop++) {
       let response;
       if (type === 'gitee' && !repo.token && fetchImpl === fetch) {
@@ -43,8 +48,10 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
         });
         await giteeGate;
       }
-      try { response = await fetchImpl(url.href, { headers: currentHeaders, redirect: 'manual', signal: AbortSignal.timeout(180000) }); }
-      catch (e) { throw new Error(e.name === 'TimeoutError' ? `${label} 请求超时` : `无法连接 ${label}，请检查网络、地址和证书`); }
+      // Node fetch defaults to Sec-Fetch-Mode: cors, which GitLab's archive
+      // hotlink protection rejects with 406. Set mode (a header override is ignored).
+      try { response = await fetchImpl(url.href, { headers: currentHeaders, ...(type === 'gitlab' && archive ? { mode: 'same-origin' } : {}), redirect: 'manual', signal: AbortSignal.timeout(180000) }); }
+      catch (e) { throw new Error((e.name === 'TimeoutError' ? `${label} 请求超时` : `无法连接 ${label}，请检查网络、地址和证书`) + context()); }
       if ([301, 302, 303, 307, 308].includes(response.status) && archive) {
         const location = response.headers.get('location'); await response.body?.cancel();
         if (!location) throw new Error(`${label} 下载重定向缺少地址`);
@@ -64,7 +71,8 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
         }
         if (response.status === 429 || /rate.?limit|频率|限流/i.test(detail) || response.headers.get('x-ratelimit-remaining') === '0') throw new Error(`${label}：API 已限流，将在下次同步重试${type === 'gitee' && !repo.token ? '（已下载文件会复用）' : ''}`);
         const messages = { 401: 'Token 无效或已过期', 403: '访问被拒绝，请检查 Token 权限或 API 请求限额', 404: '仓库或分支不存在，或 Token 无权访问', 429: 'API 请求过于频繁，稍后自动重试' };
-        throw new Error(`${label}：${messages[response.status] || `返回 HTTP ${response.status}`}`);
+        const message = response.status === 406 ? '返回 HTTP 406，请检查 GitLab 防盗链、响应格式及反向代理日志' : messages[response.status] || `返回 HTTP ${response.status}`;
+        throw new Error(`${label}：${message}${context(response)}`);
       }
       return response;
     }

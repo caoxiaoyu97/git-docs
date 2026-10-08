@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.7.7-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.7.7-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.7.8-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.7.8-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -116,6 +116,11 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
 
 ## 版本更新
+
+## 1.7.8
+
+修复 GitLab 下载仓库压缩包时因 Node.js fetch 默认发送 Sec-Fetch-Mode: cors 而触发防盗链、返回 HTTP 406 的问题。仅 GitLab 压缩包下载使用 same-origin 模式，GitHub 和 Gitee 请求方式保持不变。同步错误增加失败阶段、接口路径和请求编号，便于排查。
+
 
 ## 1.7.7
 

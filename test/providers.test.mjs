@@ -1,9 +1,52 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { Store, repoConfig } from '../src/core.mjs';
 import { createProvider, sourceUrl } from '../src/providers.mjs';
 import { archive } from './mock.mjs';
 import { temporary } from './temporary.mjs';
+
+test('GitLab archive uses a fetch mode accepted by hotlink protection over real HTTP', async t => {
+  const modes = []; const sha = 'a'.repeat(40);
+  const body = await archive([{ name: 'repo/README.md', body: '# GitLab archive' }]);
+  const server = http.createServer((req, res) => {
+    if (req.headers['private-token'] !== 'test-secret') { res.writeHead(401).end(); return; }
+    if (req.url.includes('/repository/archive.tar.gz')) {
+      modes.push(req.headers['sec-fetch-mode']);
+      if (['cors', 'no-cors', 'websocket'].includes(req.headers['sec-fetch-mode'])) { res.writeHead(406).end('{"message":"406 Not Acceptable"}'); return; }
+      res.writeHead(200, { 'Content-Type': 'application/gzip' }).end(body); return;
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(req.url.includes('/branches/') ? { commit: { id: sha } } : { default_branch: 'master' }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const repo = repoConfig({ url: `http://127.0.0.1:${server.address().port}/team/project`, token: 'test-secret' });
+  const baseline = await fetch(`${repo.gitlabBase}/api/v4/projects/team%2Fproject/repository/archive.tar.gz?sha=${sha}`, { headers: { 'PRIVATE-TOKEN': repo.token } });
+  assert.equal(baseline.status, 406); await baseline.body.cancel();
+  const store = new Store(await temporary()); await store.sync(repo);
+  assert.equal(store.snapshots.get(repo.id)?.documents[0].title, 'GitLab archive', JSON.stringify(store.statuses.get(repo.id)));
+  assert.deepEqual(modes, ['cors', 'same-origin']);
+});
+
+test('GitLab HTTP errors identify the stage and request ID without exposing response bodies or token', async () => {
+  const repo = repoConfig({ url: 'https://gitlab.company/team/project', token: 'test-secret' });
+  const provider = createProvider(repo, async () => new Response('upstream body test-secret', { status: 406, headers: { 'x-request-id': 'request-123' } }));
+  await assert.rejects(provider.archive('a'.repeat(40)), error => {
+    assert.match(error.message, /HTTP 406/); assert.match(error.message, /下载仓库压缩包/);
+    assert.match(error.message, /request-123/); assert.doesNotMatch(error.message, /test-secret|upstream body/); return true;
+  });
+});
+
+test('GitLab archive mode keeps cross-origin redirect rejection', async () => {
+  const repo = repoConfig({ url: 'https://gitlab.company/team/project', token: 'test-secret' });
+  let calls = 0;
+  const provider = createProvider(repo, async (url, options) => {
+    calls++; assert.equal(options.mode, 'same-origin'); assert.equal(options.redirect, 'manual');
+    return new Response(null, { status: 302, headers: { location: 'https://unexpected.example/archive' } });
+  });
+  await assert.rejects(provider.archive('a'.repeat(40)), /非预期/); assert.equal(calls, 1);
+});
 
 test('platform is inferred from URL and public repositories do not require a token', () => {
   for (const [url, provider] of [['https://github.com/team/project.git', 'github'], ['https://gitee.com/team/project', 'gitee'], ['http://gitlab.company/team/project', 'gitlab']]) {
@@ -17,6 +60,7 @@ for (const type of ['github', 'gitee']) test(`${type}: authenticated sync, pinne
   let sha = 'c'.repeat(40); let files = [{ name: 'root/README.md', body: '# 内容\n测试' }]; const calls = [];
   const fetchMock = async (url, options) => {
     calls.push({ url, headers: options.headers });
+    assert.equal(options.mode, undefined, `${type} keeps its existing fetch mode`);
     if (url.startsWith('https://codeload.github.com/')) { assert.equal(options.headers.Authorization, undefined); return new Response(await archive(files)); }
     assert.equal(options.headers.Authorization, 'Bearer test-secret'); assert.ok(!url.includes('test-secret'));
     if (url.includes('/tarball')) {
