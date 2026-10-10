@@ -62,7 +62,8 @@ export function repoConfig(input, previous = {}) {
   const branch = String(input.branch || '').trim();
   if (branch.length > 250 || /[\x00-\x1f]/.test(branch)) throw new Error('分支名称无效');
   const name = String(input.name || project.split('/').at(-1)).trim().slice(0, 100);
-  return { id: previous.id || randomUUID(), name, url: `${u.origin}${prefix}/${project}`, provider, ...(provider === 'gitlab' ? { gitlabBase: base.href.replace(/\/$/, '') } : {}), project, token, branch };
+  const description = String(input.description ?? previous.description ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  return { id: previous.id || randomUUID(), name, description, url: `${u.origin}${prefix}/${project}`, provider, ...(provider === 'gitlab' ? { gitlabBase: base.href.replace(/\/$/, '') } : {}), project, token, branch };
 }
 
 function meter(max, message) {
@@ -133,9 +134,14 @@ export class Store {
     this.statuses.set(repo.id, { checking: true, phase: 'checking', checkedAt: start });
     try {
       const provider = createProvider(repo, this.fetchImpl, { cacheDir: path.join(this.repoDir(repo.id), 'public-cache') });
-      const { branch, sha } = await provider.latest();
+      const { branch, sha, description } = await provider.latest();
       const old = this.snapshots.get(repo.id);
       if (old?.sha === sha && old.branch === branch && old.project === repo.project && old.gitlabBase === repo.gitlabBase && (old.provider || 'gitlab') === provider.type) {
+        if (old.gitDescription !== description) {
+          const next = { ...old, gitDescription: description }; delete next.root;
+          await atomicJson(path.join(old.root, 'index.json'), next);
+          this.snapshots.set(repo.id, { ...next, root: old.root });
+        }
         this.statuses.set(repo.id, { checking: false, phase: 'complete', checkedAt: new Date().toISOString() }); return;
       }
       const version = randomUUID(); stage = path.join(this.repoDir(repo.id), 'versions', version);
@@ -144,7 +150,7 @@ export class Store {
       const source = Readable.fromWeb(response.body);
       source.once('end', () => this.statuses.set(repo.id, { checking: true, phase: 'processing', checkedAt: start }));
       const index = await extractDocs(source, path.join(stage, 'files'));
-      const snapshot = { ...index, sha, branch, project: repo.project, provider: provider.type, gitlabBase: repo.gitlabBase, updatedAt: new Date().toISOString() };
+      const snapshot = { ...index, sha, branch, gitDescription: description, project: repo.project, provider: provider.type, gitlabBase: repo.gitlabBase, updatedAt: new Date().toISOString() };
       await atomicJson(path.join(stage, 'index.json'), snapshot);
       await atomicJson(path.join(this.repoDir(repo.id), 'current.json'), { version });
       this.snapshots.set(repo.id, { ...snapshot, root: stage }); stage = null;

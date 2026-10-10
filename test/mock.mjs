@@ -25,7 +25,7 @@ export async function mockGitLab(host = '127.0.0.1', port = 0) {
     if (req.url.includes('/repository/archive.tar.gz')) { state.downloads++; res.setHeader('Content-Type', 'application/gzip'); res.end(await archive(state.entries)); }
     else if (req.url.includes('/repository/branches?')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify([{name:'main'},{name:'dev'}])); }
     else if (req.url.includes('/repository/branches/')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ commit: { id: state.sha } })); }
-    else { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ default_branch: 'main' })); }
+    else { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ default_branch: 'main', description: '演示仓库描述' })); }
   });
   await new Promise(resolve => server.listen(port, host, resolve));
   return { state, server, base: `http://127.0.0.1:${server.address().port}` };

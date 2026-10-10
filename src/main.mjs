@@ -116,7 +116,7 @@ async function serve() {
   function reposList() {
     return config.repos.map(repo => {
       const snapshot = store.snapshots.get(repo.id); const status = store.defaultStatus(repo);
-      return { id: repo.id, name: repo.name, count: snapshot?.documents.length || 0, updatedAt: snapshot?.updatedAt, sha: snapshot?.sha?.slice(0, 8), branch: snapshot?.branch, ...status };
+      return { id: repo.id, name: repo.name, description: repo.description || snapshot?.gitDescription || '', count: snapshot?.documents.length || 0, updatedAt: snapshot?.updatedAt, sha: snapshot?.sha?.slice(0, 8), branch: snapshot?.branch, ...status };
     });
   }
   const server = http.createServer(async (req, res) => {
@@ -133,7 +133,7 @@ async function serve() {
         const secret = String(req.headers.authorization || '').replace(/^Bearer /, '');
         if (!verifySecret(secret, config.adminHash)) return send(401, { error: '管理密码不正确' });
         if (route === '/api/admin/repos' && req.method === 'GET') {
-          return send(200, { repos: config.repos.map(({ token, ...r }) => ({ ...r, hasToken: Boolean(token) })), intervalMinutes: config.intervalMinutes });
+          return send(200, { repos: config.repos.map(({ token, ...r }) => ({ ...r, hasToken: Boolean(token), gitDescription: store.snapshots.get(r.id)?.gitDescription || '' })), intervalMinutes: config.intervalMinutes });
         }
         if (route === '/api/admin/cache' && req.method === 'GET') {
           const repo = config.repos.find(r => r.id === u.searchParams.get('id'));

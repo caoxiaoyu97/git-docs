@@ -144,7 +144,8 @@ export function createProvider(repo, fetchImpl = fetch, { cacheDir } = {}) {
       const result = await json(`${type === 'gitlab' ? '/repository' : ''}/branches/${encodeURIComponent(branch)}`);
       const sha = type === 'gitlab' ? result.commit?.id : result.commit?.sha;
       if (!/^[a-f0-9]{40,64}$/i.test(sha || '')) throw new Error('无法读取分支提交信息');
-      return { branch, sha };
+      const description = typeof project.description === 'string' ? project.description.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+      return { branch, sha, description };
     },
     async archive(sha) {
       if (type === 'gitee' && !repo.token) return publicGiteeArchive(sha);

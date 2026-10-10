@@ -77,7 +77,7 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   t.after(() => child.kill()); let log = ''; child.stdout.on('data', b => log += b); child.stderr.on('data', b => log += b);
   const base = `http://127.0.0.1:${port}`; let list;
   for (let i = 0; i < 70; i++) { try { list = await (await fetch(base + '/api/repos')).json(); if (list.repos[0]?.count === 3) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
-  assert.equal(list?.repos[0]?.count, 3, log); assert.doesNotMatch(JSON.stringify(list), /mock-test-token/);
+  assert.equal(list?.repos[0]?.count, 3, log); assert.equal(list?.repos[0]?.description, '演示仓库描述'); assert.doesNotMatch(JSON.stringify(list), /mock-test-token/);
   assert.equal((await fetch(base + '/api/admin/repos')).status, 401);
   const auth = { Authorization: 'Bearer test-admin-password' };
   const admin = await (await fetch(base + '/api/admin/repos', { headers: auth })).text(); assert.doesNotMatch(admin, /mock-test-token/);
@@ -137,7 +137,7 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   assert.equal(status.synced,true);assert.equal(mock.state.downloads,2);
   const branchDoc=await(await fetch(base+`/api/repo/${repo.id}/doc?branch=dev&path=README.md`)).json();assert.match(branchDoc.source,/\/dev\//);assert.match(branchDoc.html,/branch=dev/);
   assert.equal((await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://unrelated.invalid'},body:'{}'})).status,403);
-  const add = await fetch(base + '/api/admin/repos', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '第二个仓库', url: mock.base + '/team/another', token: 'mock-test-token' }) });
+  const add = await fetch(base + '/api/admin/repos', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '第二个仓库', description: '手工描述', url: mock.base + '/team/another', token: 'mock-test-token' }) });
   const cache = await(await fetch(base + '/api/admin/cache?id=' + repo.id, {headers:auth})).json();assert.ok(cache.branches.find(b=>b.branch==='dev').bytes>0);
   assert.equal((await fetch(base + '/api/admin/cache?id=' + repo.id)).status,401);
   const edited=await fetch(base + '/api/admin/repos',{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({id:repo.id,url:mock.base+'/team/replacement',token:'mock-test-token'})});
@@ -146,5 +146,5 @@ test('bundled server: public API does not reveal token; admin auth, search, docu
   assert.equal((await fetch(base+'/api/admin/repos',{headers:auth})).status,401);
   const settingsCheck=await(await fetch(base+'/api/admin/repos',{headers:{Authorization:'Bearer new-test-password'}})).json();assert.equal(settingsCheck.intervalMinutes,7);
   assert.equal((await fs.readFile(path.join(dir,'admin-password.txt'),'utf8')).trim(),'new-test-password');
-  assert.equal(add.status, 200); const after = await (await fetch(base + '/api/repos')).json(); assert.equal(after.repos.length, 2);
+  assert.equal(add.status, 200); const after = await (await fetch(base + '/api/repos')).json(); assert.equal(after.repos.length, 2); assert.equal(after.repos.find(r => r.name === '第二个仓库')?.description, '手工描述');
 });
