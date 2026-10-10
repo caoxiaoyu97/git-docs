@@ -27,6 +27,21 @@ dist/release/
 
 首次构建需要联网下载官方 Node 基础镜像和 npm 包，网络受限时应预先配置你现有的 Docker/npm 网络访问。命令使用已有 Docker builder，不会安装额外构建服务或修改 Docker 设置。应用构建和测试在构建主机的原生架构完成；最终镜像使用各自架构的官方 Node 运行时，不需要手动安装模拟器。
 
+## 发布到公共镜像库
+
+仓库内置 GitHub Actions 工作流 `.github/workflows/docker-publish.yml`。推送到 `main`、推送 `v*` 标签或手动触发时，GitHub 云端会构建 amd64/arm64 多架构镜像并推送，整个过程不需要在内网服务器登录任何镜像仓库。
+
+- 默认发布到 GitHub 容器镜像库，无需配置密钥：`ghcr.io/caoxiaoyu97/git-docs`。
+- 想同时发布到 Docker Hub，在仓库 Settings → Secrets and variables → Actions 添加 `DOCKERHUB_USERNAME`（用户名）和 `DOCKERHUB_TOKEN`（访问令牌，不是登录密码）；加好后会自动额外推送 `<用户名>/git-docs`。
+- 镜像标签取自 package.json 的版本号；`latest` 只在 `main` 或 `v*` 标签的构建里更新。
+- 首次发布后到 GitHub Packages 把该镜像改为 public（Packages → git-docs → Package settings → Change visibility），他人才能匿名拉取。
+
+拉取并运行：
+
+```bash
+docker run -d --name git-docs -p 18080:8080 -v /你的目录:/data ghcr.io/caoxiaoyu97/git-docs:latest
+```
+
 ## 本地开发
 
 ```bash

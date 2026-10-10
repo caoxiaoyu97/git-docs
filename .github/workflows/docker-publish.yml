@@ -1,0 +1,89 @@
+name: 构建并发布 Docker 镜像
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      # 设置仓库密钥 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN 后会自动推送到 Docker Hub；
+      # 未设置时只推送到 GitHub 容器镜像库 ghcr.io，无需任何密钥。
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 读取 package.json 版本号
+        id: version
+        run: |
+          version=$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 QEMU 与 Buildx
+        uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub 容器镜像库
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 登录 Docker Hub
+        if: env.DOCKERHUB_USER != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: tags
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ghcr_image=$(echo "$GHCR_IMAGE" | tr '[:upper:]' '[:lower:]')
+          tags="${ghcr_image}:${VERSION}"
+          if [ -n "$DOCKERHUB_USER" ]; then
+            tags="${tags}"$'\n'"${DOCKERHUB_USER}/git-docs:${VERSION}"
+          fi
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tags="${tags}"$'\n'"${ghcr_image}:latest"
+            if [ -n "$DOCKERHUB_USER" ]; then
+              tags="${tags}"$'\n'"${DOCKERHUB_USER}/git-docs:latest"
+            fi
+          fi
+          {
+            echo 'list<<EOF'
+            printf '%s\n' "$tags"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          printf '将推送以下标签：\n%s\n' "$tags"
+
+      - name: 构建并推送多架构镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
