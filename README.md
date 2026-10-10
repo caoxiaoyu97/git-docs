@@ -42,6 +42,16 @@ dist/release/
 docker run -d --name git-docs -p 18080:8080 -v /你的目录:/data ghcr.io/caoxiaoyu97/git-docs:latest
 ```
 
+## 使用方需要知道的配置
+
+镜像对外发布后，使用方最关心三件事：端口、数据目录、初始密码。这几层渠道同时给出：
+
+- 镜像带 `org.opencontainers.image.source` 与 `org.opencontainers.image.documentation` 标签，`docker inspect <镜像>` 能直接看到仓库与文档地址。
+- 首次启动的容器日志会打印管理密码、数据目录，以及一条带 `-p`、`-v` 的 `docker run` 示例。
+- 完整的配置项、环境变量、compose 示例和常见问题见 [docs/docker-image.md](docs/docker-image.md)，这份内容可以直接粘贴到 Docker Hub 仓库的 Overview 里。
+
+最关键的两点：容器内固定监听 `8080`，必须用 `-p 宿主机端口:8080` 发布；数据目录必须用 `-v 宿主机目录:/data` 挂载，否则容器重建后配置和文档都会丢失。
+
 ## 本地开发
 
 ```bash

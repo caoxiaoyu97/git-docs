@@ -15,7 +15,10 @@ FROM ${RUNTIME_IMAGE}
 ARG APP_VERSION=0.0.0
 LABEL org.opencontainers.image.title="Git Docs" \
       org.opencontainers.image.description="GitLab GitHub Gitee Markdown portal with external data directory" \
-      org.opencontainers.image.version="${APP_VERSION}"
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.source="https://github.com/caoxiaoyu97/git-docs" \
+      org.opencontainers.image.url="https://github.com/caoxiaoyu97/git-docs" \
+      org.opencontainers.image.documentation="https://github.com/caoxiaoyu97/git-docs/blob/main/docs/docker-image.md"
 WORKDIR /app
 ENV NODE_ENV=production GIT_DOCS_HOME=/app GIT_DOCS_DATA=/data
 COPY --from=build /build/dist/app.cjs ./app.cjs
