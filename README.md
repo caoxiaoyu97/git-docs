@@ -20,8 +20,8 @@ dist/release/
 
 同一个归档包含两个镜像：
 
-- `git-docs:1.7.9-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
-- `git-docs:1.7.9-arm64`：Apple M 系列 Mac、ARM64 Linux。
+- `git-docs:1.7.10-amd64`：Intel/AMD 电脑，包括 Windows、Linux、Intel Mac。
+- `git-docs:1.7.10-arm64`：Apple M 系列 Mac、ARM64 Linux。
 
 两个独立标签放在一个 Docker archive 中，不要求 Docker 开启 containerd 镜像存储。接收方只需 Docker，不需要 Node/npm，也不需要连接镜像仓库。
 
@@ -141,6 +141,10 @@ GitHub Enterprise、Gitee 私有化专用域名未适配。特殊 GitLab 子路�
 因为 Mermaid 会把主题样式写进生成的 SVG，CSP 的 style-src 保留了 'unsafe-inline'；script-src 仍是 'self' 不变。
 
 ## 版本更新
+
+## 1.7.10
+
+启动脚本改用 `--restart unless-stopped`：容器异常退出和宿主机重启后会自动恢复，手动停掉的仍然保持停止，与部署说明里推荐的策略保持一致。镜像同时补充了 OCI 标签（仓库地址、使用说明链接），并在 `docs/docker-image.md` 提供可直接粘贴到镜像仓库的成品说明。
 
 ## 1.7.9
 
