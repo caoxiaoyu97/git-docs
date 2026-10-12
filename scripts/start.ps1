@@ -94,7 +94,7 @@ if ($updating) {
 
 Write-Host ''
 Write-Host '正在启动...'
-docker run -d --name $name --restart no -p "${port}:8080" -v "${dataDir}:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$password" $image
+docker run -d --name $name --restart unless-stopped -p "${port}:8080" -v "${dataDir}:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$password" $image
 if ($LASTEXITCODE -ne 0) {
   Write-Host "启动失败。常见原因：端口 $port 已被占用，或 Docker 没有运行。"
   Read-Host '按回车退出'

@@ -98,7 +98,7 @@ fi
 
 echo
 echo "正在启动…"
-if ! docker run -d --name "$NAME" --restart no -p "$PORT:8080" -v "$DATA_DIR:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$PASSWORD" "$IMAGE"; then
+if ! docker run -d --name "$NAME" --restart unless-stopped -p "$PORT:8080" -v "$DATA_DIR:/data" -e "GIT_DOCS_ADMIN_PASSWORD=$PASSWORD" "$IMAGE"; then
   echo "启动失败。常见原因：端口 $PORT 已被占用，或 Docker 没有运行。"
   exit 1
 fi

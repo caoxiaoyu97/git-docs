@@ -38,7 +38,7 @@ exit $LASTEXITCODE
     if (scenario === 'cancel') assert.doesNotMatch(calls, /rm -f|run -d/);
     else {
       assert.match(calls, /rm -f git-docs/);
-      assert.match(calls, /--restart no -p 18080:8080/);
+      assert.match(calls, /--restart unless-stopped -p 18080:8080/);
       assert.ok(calls.includes(data + ':/data'));
       assert.match(calls, /inspect --format/);
     }
